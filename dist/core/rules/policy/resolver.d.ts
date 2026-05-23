@@ -1,4 +1,4 @@
-import { type Rulebook } from '@/core/rulebook';
+import { type Rulebook } from '@/core/rules/rulebook';
 import type { RulebookLockEntry, RulesLockfile, RulesPolicyOptions, SyncRulesConfigOptions } from './types';
 export interface ResolvedRulebook {
     entry: RulebookLockEntry;

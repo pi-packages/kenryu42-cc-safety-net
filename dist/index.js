@@ -1624,6 +1624,265 @@ function collectCommandTemplate(tokens, start) {
   };
 }
 
+// src/core/analyze/rm.ts
+import { realpathSync as realpathSync3 } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { normalize, resolve, sep as sep2 } from "node:path";
+
+// src/core/env.ts
+var ENV_FLAGS = {
+  strict: { name: "CC_SAFETY_NET_STRICT", legacyName: "SAFETY_NET_STRICT" },
+  paranoid: { name: "CC_SAFETY_NET_PARANOID", legacyName: "SAFETY_NET_PARANOID" },
+  paranoidRm: { name: "CC_SAFETY_NET_PARANOID_RM", legacyName: "SAFETY_NET_PARANOID_RM" },
+  paranoidInterpreters: {
+    name: "CC_SAFETY_NET_PARANOID_INTERPRETERS",
+    legacyName: "SAFETY_NET_PARANOID_INTERPRETERS"
+  },
+  worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
+  debug: { name: "CC_SAFETY_NET_DEBUG" }
+};
+function envTruthy(flag) {
+  const value = typeof flag === "string" ? process.env[flag] : getEnvFlagValue(flag);
+  return value === "1" || value?.toLowerCase() === "true";
+}
+function getEnvFlagValue(flag) {
+  if (process.env[flag.name] !== undefined) {
+    return process.env[flag.name];
+  }
+  if (flag.legacyName) {
+    return process.env[flag.legacyName];
+  }
+  return;
+}
+function envFlagIsSet(flag) {
+  return process.env[flag.name] !== undefined || !!flag.legacyName && process.env[flag.legacyName] !== undefined;
+}
+
+// src/core/analyze/rm.ts
+var IS_WINDOWS = process.platform === "win32";
+function normalizePathForComparison(p) {
+  let normalized = normalize(p);
+  if (IS_WINDOWS) {
+    normalized = normalized.replace(/\//g, "\\");
+    normalized = normalized.toLowerCase();
+    if (normalized.length > 3 && normalized.endsWith("\\")) {
+      normalized = normalized.slice(0, -1);
+    }
+  } else {
+    if (normalized.length > 1 && normalized.endsWith("/")) {
+      normalized = normalized.slice(0, -1);
+    }
+  }
+  return normalized;
+}
+var REASON_RM_RF = "rm -rf outside cwd is blocked. Use explicit paths within the current directory, or delete manually.";
+var REASON_RM_RF_ROOT_HOME = "rm -rf targeting root or home directory is extremely dangerous and always blocked.";
+var REASON_RM_HOME_CWD = "rm -rf in home directory is dangerous. Change to a project directory first.";
+function analyzeRm(tokens, options = {}) {
+  const {
+    cwd,
+    originalCwd,
+    paranoid = false,
+    allowTmpdirVar = true,
+    tmpdirOverridden = false
+  } = options;
+  const anchoredCwd = originalCwd ?? cwd ?? null;
+  const resolvedCwd = cwd ?? null;
+  const trustTmpdirVar = allowTmpdirVar && !tmpdirOverridden;
+  const ctx = {
+    anchoredCwd,
+    resolvedCwd,
+    paranoid,
+    trustTmpdirVar,
+    homeDir: getHomeDirForRmPolicy()
+  };
+  if (!hasRecursiveForceFlags(tokens)) {
+    return null;
+  }
+  const targets = extractTargets(tokens);
+  for (const target of targets) {
+    const classification = classifyTarget(target, ctx);
+    const reason = reasonForClassification(classification, ctx);
+    if (reason) {
+      return reason;
+    }
+  }
+  return null;
+}
+function extractTargets(tokens) {
+  const targets = [];
+  let pastDoubleDash = false;
+  for (let i = 1;i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token)
+      continue;
+    if (token === "--") {
+      pastDoubleDash = true;
+      continue;
+    }
+    if (pastDoubleDash) {
+      targets.push(token);
+      continue;
+    }
+    if (!token.startsWith("-")) {
+      targets.push(token);
+    }
+  }
+  return targets;
+}
+function classifyTarget(target, ctx) {
+  if (isDangerousRootOrHomeTarget(target)) {
+    return { kind: "root_or_home_target" };
+  }
+  if (isTempTarget(target, ctx.trustTmpdirVar)) {
+    return { kind: "temp_target" };
+  }
+  const anchoredCwd = ctx.anchoredCwd;
+  if (anchoredCwd) {
+    if (isCwdHomeForRmPolicy(anchoredCwd, ctx.homeDir)) {
+      return { kind: "home_cwd_target" };
+    }
+    if (isCwdSelfTarget(target, anchoredCwd)) {
+      return { kind: "cwd_self_target" };
+    }
+    if (isTargetWithinCwd(target, anchoredCwd, ctx.resolvedCwd ?? anchoredCwd)) {
+      return { kind: "within_anchored_cwd" };
+    }
+  }
+  return { kind: "outside_anchored_cwd" };
+}
+function reasonForClassification(classification, ctx) {
+  switch (classification.kind) {
+    case "root_or_home_target":
+      return REASON_RM_RF_ROOT_HOME;
+    case "temp_target":
+      return null;
+    case "home_cwd_target":
+      return REASON_RM_HOME_CWD;
+    case "cwd_self_target":
+      return REASON_RM_RF;
+    case "within_anchored_cwd":
+      if (ctx.paranoid) {
+        return `${REASON_RM_RF} (${ENV_FLAGS.paranoidRm.name} enabled)`;
+      }
+      return null;
+    case "outside_anchored_cwd":
+      return REASON_RM_RF;
+  }
+}
+function isDangerousRootOrHomeTarget(path) {
+  const normalized = path.trim();
+  if (normalized === "/" || normalized === "/*") {
+    return true;
+  }
+  if (normalized === "~" || normalized === "~/" || normalized.startsWith("~/")) {
+    if (normalized === "~" || normalized === "~/" || normalized === "~/*") {
+      return true;
+    }
+  }
+  if (normalized === "$HOME" || normalized === "$HOME/" || normalized === "$HOME/*") {
+    return true;
+  }
+  if (normalized === "${HOME}" || normalized === "${HOME}/" || normalized === "${HOME}/*") {
+    return true;
+  }
+  return false;
+}
+function isTempTarget(path, allowTmpdirVar) {
+  const normalized = path.trim();
+  if (normalized.includes("..")) {
+    return false;
+  }
+  if (normalized === "/tmp" || normalized.startsWith("/tmp/")) {
+    return true;
+  }
+  if (normalized === "/var/tmp" || normalized.startsWith("/var/tmp/")) {
+    return true;
+  }
+  const systemTmpdir = tmpdir();
+  const normalizedTmpdir = normalizePathForComparison(systemTmpdir);
+  const pathToCompare = normalizePathForComparison(normalized);
+  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep2}`) || pathToCompare === normalizedTmpdir) {
+    return true;
+  }
+  if (allowTmpdirVar) {
+    if (normalized === "$TMPDIR" || normalized.startsWith("$TMPDIR/")) {
+      return true;
+    }
+    if (normalized === "${TMPDIR}" || normalized.startsWith("${TMPDIR}/")) {
+      return true;
+    }
+  }
+  return false;
+}
+function getHomeDirForRmPolicy() {
+  return process.env.HOME ?? homedir();
+}
+function isCwdHomeForRmPolicy(cwd, homeDir) {
+  try {
+    return normalizePathForComparison(cwd) === normalizePathForComparison(homeDir);
+  } catch {
+    return false;
+  }
+}
+function isCwdSelfTarget(target, cwd) {
+  if (target === "." || target === "./" || target === ".\\") {
+    return true;
+  }
+  try {
+    const resolved = resolve(cwd, target);
+    const realCwd = realpathSync3(cwd);
+    const realResolved = realpathSync3(resolved);
+    return normalizePathForComparison(realResolved) === normalizePathForComparison(realCwd);
+  } catch {
+    try {
+      const resolved = resolve(cwd, target);
+      return normalizePathForComparison(resolved) === normalizePathForComparison(cwd);
+    } catch {
+      return false;
+    }
+  }
+}
+function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
+  const resolveCwd = effectiveCwd ?? originalCwd;
+  if (target.startsWith("~") || target.startsWith("$HOME") || target.startsWith("${HOME}")) {
+    return false;
+  }
+  if (target.includes("$") || target.includes("`")) {
+    return false;
+  }
+  if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
+    try {
+      const normalizedTarget = normalizePathForComparison(target);
+      const normalizedCwd = `${normalizePathForComparison(originalCwd)}${sep2}`;
+      return normalizedTarget.startsWith(normalizedCwd);
+    } catch {
+      return false;
+    }
+  }
+  if (target.startsWith("./") || target.startsWith(".\\") || !target.includes("/") && !target.includes("\\")) {
+    try {
+      const resolved = resolve(resolveCwd, target);
+      const normalizedResolved = normalizePathForComparison(resolved);
+      const normalizedOriginalCwd = normalizePathForComparison(originalCwd);
+      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep2}`) || normalizedResolved === normalizedOriginalCwd;
+    } catch {
+      return false;
+    }
+  }
+  if (target.startsWith("../")) {
+    return false;
+  }
+  try {
+    const resolved = resolve(resolveCwd, target);
+    const normalizedResolved = normalizePathForComparison(resolved);
+    const normalizedCwd = normalizePathForComparison(originalCwd);
+    return normalizedResolved.startsWith(`${normalizedCwd}${sep2}`) || normalizedResolved === normalizedCwd;
+  } catch {
+    return false;
+  }
+}
+
 // src/core/analyze/shell-wrappers.ts
 function extractDashCArg(tokens) {
   for (let i = 1;i < tokens.length; i++) {
@@ -1646,11 +1905,11 @@ function extractDashCArg(tokens) {
 // src/core/git/config.ts
 import { execFileSync } from "node:child_process";
 import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname3, isAbsolute as isAbsolute4, join as join2, resolve as resolve2 } from "node:path";
+import { dirname as dirname3, isAbsolute as isAbsolute4, join as join2, resolve as resolve3 } from "node:path";
 
-// src/core/worktree.ts
-import { existsSync, lstatSync as lstatSync2, readFileSync, realpathSync as realpathSync3, statSync } from "node:fs";
-import { dirname as dirname2, isAbsolute as isAbsolute3, join, resolve } from "node:path";
+// src/core/git/worktree.ts
+import { existsSync, lstatSync as lstatSync2, readFileSync, realpathSync as realpathSync4, statSync } from "node:fs";
+import { dirname as dirname2, isAbsolute as isAbsolute3, join, resolve as resolve2 } from "node:path";
 var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
   "-c",
   "-C",
@@ -1674,7 +1933,7 @@ function getGitExecutionContext(tokens, cwd) {
   }
   let gitCwd;
   try {
-    gitCwd = realpathSync3(resolve(cwd));
+    gitCwd = realpathSync4(resolve2(cwd));
   } catch {
     return { gitCwd: null, hasExplicitGitContext: false };
   }
@@ -1754,7 +2013,7 @@ function isLinkedWorktree(cwd) {
     if (rawGitDir === "") {
       return false;
     }
-    const gitDir = isAbsolute3(rawGitDir) ? rawGitDir : resolve(dirname2(dotGitPath), rawGitDir);
+    const gitDir = isAbsolute3(rawGitDir) ? rawGitDir : resolve2(dirname2(dotGitPath), rawGitDir);
     if (!existsSync(join(gitDir, "commondir"))) {
       return false;
     }
@@ -1775,7 +2034,7 @@ function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
   if (rawBacklink === "") {
     return false;
   }
-  const linkedDotGitPath = isAbsolute3(rawBacklink) ? rawBacklink : resolve(gitDir, rawBacklink);
+  const linkedDotGitPath = isAbsolute3(rawBacklink) ? rawBacklink : resolve2(gitDir, rawBacklink);
   try {
     return sameFilesystemPath(linkedDotGitPath, dotGitPath);
   } catch {
@@ -1791,7 +2050,7 @@ function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
   if (configuredWorktree === null) {
     return true;
   }
-  const resolvedConfiguredWorktree = isAbsolute3(configuredWorktree) ? configuredWorktree : resolve(gitDir, configuredWorktree);
+  const resolvedConfiguredWorktree = isAbsolute3(configuredWorktree) ? configuredWorktree : resolve2(gitDir, configuredWorktree);
   try {
     return sameFilesystemPath(resolvedConfiguredWorktree, worktreeRoot);
   } catch {
@@ -1809,9 +2068,9 @@ function sameFilesystemPath(left, right) {
   return getCanonicalPathForComparison(left) === getCanonicalPathForComparison(right);
 }
 function getCanonicalPathForComparison(path) {
-  return normalizePathForComparison(realpathSync3.native(path));
+  return normalizePathForComparison2(realpathSync4.native(path));
 }
-function normalizePathForComparison(path) {
+function normalizePathForComparison2(path) {
   let normalized = path.replace(/^\\\\\?\\UNC\\/i, "//").replace(/^\\\\\?\\/i, "");
   normalized = normalized.replace(/\\/g, "/");
   if (normalized.length > 1 && normalized.endsWith("/")) {
@@ -1902,7 +2161,7 @@ function isDirectory(path) {
 }
 function findDotGit(cwd) {
   try {
-    return findDotGitInAncestors(realpathSync3(cwd));
+    return findDotGitInAncestors(realpathSync4(cwd));
   } catch {
     return null;
   }
@@ -2103,7 +2362,7 @@ function resolveGitDirFromDotGit(dotGitPath) {
     if (rawGitDir === "") {
       return null;
     }
-    return isAbsolute4(rawGitDir) ? rawGitDir : resolve2(dirname3(dotGitPath), rawGitDir);
+    return isAbsolute4(rawGitDir) ? rawGitDir : resolve3(dirname3(dotGitPath), rawGitDir);
   } catch {
     return null;
   }
@@ -2118,7 +2377,7 @@ function resolveCommonGitDir(gitDir) {
     if (rawCommonDir === "") {
       return null;
     }
-    return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve2(gitDir, rawCommonDir);
+    return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve3(gitDir, rawCommonDir);
   } catch {
     return null;
   }
@@ -2624,265 +2883,6 @@ function getGitWorktreeRelaxation(tokens, options = {}) {
   return getGitWorktreeRelaxationForMatch(tokens, match, options);
 }
 
-// src/core/rules-rm.ts
-import { realpathSync as realpathSync4 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { normalize, resolve as resolve3, sep as sep2 } from "node:path";
-
-// src/core/env.ts
-var ENV_FLAGS = {
-  strict: { name: "CC_SAFETY_NET_STRICT", legacyName: "SAFETY_NET_STRICT" },
-  paranoid: { name: "CC_SAFETY_NET_PARANOID", legacyName: "SAFETY_NET_PARANOID" },
-  paranoidRm: { name: "CC_SAFETY_NET_PARANOID_RM", legacyName: "SAFETY_NET_PARANOID_RM" },
-  paranoidInterpreters: {
-    name: "CC_SAFETY_NET_PARANOID_INTERPRETERS",
-    legacyName: "SAFETY_NET_PARANOID_INTERPRETERS"
-  },
-  worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
-  debug: { name: "CC_SAFETY_NET_DEBUG" }
-};
-function envTruthy(flag) {
-  const value = typeof flag === "string" ? process.env[flag] : getEnvFlagValue(flag);
-  return value === "1" || value?.toLowerCase() === "true";
-}
-function getEnvFlagValue(flag) {
-  if (process.env[flag.name] !== undefined) {
-    return process.env[flag.name];
-  }
-  if (flag.legacyName) {
-    return process.env[flag.legacyName];
-  }
-  return;
-}
-function envFlagIsSet(flag) {
-  return process.env[flag.name] !== undefined || !!flag.legacyName && process.env[flag.legacyName] !== undefined;
-}
-
-// src/core/rules-rm.ts
-var IS_WINDOWS = process.platform === "win32";
-function normalizePathForComparison2(p) {
-  let normalized = normalize(p);
-  if (IS_WINDOWS) {
-    normalized = normalized.replace(/\//g, "\\");
-    normalized = normalized.toLowerCase();
-    if (normalized.length > 3 && normalized.endsWith("\\")) {
-      normalized = normalized.slice(0, -1);
-    }
-  } else {
-    if (normalized.length > 1 && normalized.endsWith("/")) {
-      normalized = normalized.slice(0, -1);
-    }
-  }
-  return normalized;
-}
-var REASON_RM_RF = "rm -rf outside cwd is blocked. Use explicit paths within the current directory, or delete manually.";
-var REASON_RM_RF_ROOT_HOME = "rm -rf targeting root or home directory is extremely dangerous and always blocked.";
-var REASON_RM_HOME_CWD = "rm -rf in home directory is dangerous. Change to a project directory first.";
-function analyzeRm(tokens, options = {}) {
-  const {
-    cwd,
-    originalCwd,
-    paranoid = false,
-    allowTmpdirVar = true,
-    tmpdirOverridden = false
-  } = options;
-  const anchoredCwd = originalCwd ?? cwd ?? null;
-  const resolvedCwd = cwd ?? null;
-  const trustTmpdirVar = allowTmpdirVar && !tmpdirOverridden;
-  const ctx = {
-    anchoredCwd,
-    resolvedCwd,
-    paranoid,
-    trustTmpdirVar,
-    homeDir: getHomeDirForRmPolicy()
-  };
-  if (!hasRecursiveForceFlags(tokens)) {
-    return null;
-  }
-  const targets = extractTargets(tokens);
-  for (const target of targets) {
-    const classification = classifyTarget(target, ctx);
-    const reason = reasonForClassification(classification, ctx);
-    if (reason) {
-      return reason;
-    }
-  }
-  return null;
-}
-function extractTargets(tokens) {
-  const targets = [];
-  let pastDoubleDash = false;
-  for (let i = 1;i < tokens.length; i++) {
-    const token = tokens[i];
-    if (!token)
-      continue;
-    if (token === "--") {
-      pastDoubleDash = true;
-      continue;
-    }
-    if (pastDoubleDash) {
-      targets.push(token);
-      continue;
-    }
-    if (!token.startsWith("-")) {
-      targets.push(token);
-    }
-  }
-  return targets;
-}
-function classifyTarget(target, ctx) {
-  if (isDangerousRootOrHomeTarget(target)) {
-    return { kind: "root_or_home_target" };
-  }
-  if (isTempTarget(target, ctx.trustTmpdirVar)) {
-    return { kind: "temp_target" };
-  }
-  const anchoredCwd = ctx.anchoredCwd;
-  if (anchoredCwd) {
-    if (isCwdHomeForRmPolicy(anchoredCwd, ctx.homeDir)) {
-      return { kind: "home_cwd_target" };
-    }
-    if (isCwdSelfTarget(target, anchoredCwd)) {
-      return { kind: "cwd_self_target" };
-    }
-    if (isTargetWithinCwd(target, anchoredCwd, ctx.resolvedCwd ?? anchoredCwd)) {
-      return { kind: "within_anchored_cwd" };
-    }
-  }
-  return { kind: "outside_anchored_cwd" };
-}
-function reasonForClassification(classification, ctx) {
-  switch (classification.kind) {
-    case "root_or_home_target":
-      return REASON_RM_RF_ROOT_HOME;
-    case "temp_target":
-      return null;
-    case "home_cwd_target":
-      return REASON_RM_HOME_CWD;
-    case "cwd_self_target":
-      return REASON_RM_RF;
-    case "within_anchored_cwd":
-      if (ctx.paranoid) {
-        return `${REASON_RM_RF} (${ENV_FLAGS.paranoidRm.name} enabled)`;
-      }
-      return null;
-    case "outside_anchored_cwd":
-      return REASON_RM_RF;
-  }
-}
-function isDangerousRootOrHomeTarget(path) {
-  const normalized = path.trim();
-  if (normalized === "/" || normalized === "/*") {
-    return true;
-  }
-  if (normalized === "~" || normalized === "~/" || normalized.startsWith("~/")) {
-    if (normalized === "~" || normalized === "~/" || normalized === "~/*") {
-      return true;
-    }
-  }
-  if (normalized === "$HOME" || normalized === "$HOME/" || normalized === "$HOME/*") {
-    return true;
-  }
-  if (normalized === "${HOME}" || normalized === "${HOME}/" || normalized === "${HOME}/*") {
-    return true;
-  }
-  return false;
-}
-function isTempTarget(path, allowTmpdirVar) {
-  const normalized = path.trim();
-  if (normalized.includes("..")) {
-    return false;
-  }
-  if (normalized === "/tmp" || normalized.startsWith("/tmp/")) {
-    return true;
-  }
-  if (normalized === "/var/tmp" || normalized.startsWith("/var/tmp/")) {
-    return true;
-  }
-  const systemTmpdir = tmpdir();
-  const normalizedTmpdir = normalizePathForComparison2(systemTmpdir);
-  const pathToCompare = normalizePathForComparison2(normalized);
-  if (pathToCompare.startsWith(`${normalizedTmpdir}${sep2}`) || pathToCompare === normalizedTmpdir) {
-    return true;
-  }
-  if (allowTmpdirVar) {
-    if (normalized === "$TMPDIR" || normalized.startsWith("$TMPDIR/")) {
-      return true;
-    }
-    if (normalized === "${TMPDIR}" || normalized.startsWith("${TMPDIR}/")) {
-      return true;
-    }
-  }
-  return false;
-}
-function getHomeDirForRmPolicy() {
-  return process.env.HOME ?? homedir();
-}
-function isCwdHomeForRmPolicy(cwd, homeDir) {
-  try {
-    return normalizePathForComparison2(cwd) === normalizePathForComparison2(homeDir);
-  } catch {
-    return false;
-  }
-}
-function isCwdSelfTarget(target, cwd) {
-  if (target === "." || target === "./" || target === ".\\") {
-    return true;
-  }
-  try {
-    const resolved = resolve3(cwd, target);
-    const realCwd = realpathSync4(cwd);
-    const realResolved = realpathSync4(resolved);
-    return normalizePathForComparison2(realResolved) === normalizePathForComparison2(realCwd);
-  } catch {
-    try {
-      const resolved = resolve3(cwd, target);
-      return normalizePathForComparison2(resolved) === normalizePathForComparison2(cwd);
-    } catch {
-      return false;
-    }
-  }
-}
-function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
-  const resolveCwd = effectiveCwd ?? originalCwd;
-  if (target.startsWith("~") || target.startsWith("$HOME") || target.startsWith("${HOME}")) {
-    return false;
-  }
-  if (target.includes("$") || target.includes("`")) {
-    return false;
-  }
-  if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
-    try {
-      const normalizedTarget = normalizePathForComparison2(target);
-      const normalizedCwd = `${normalizePathForComparison2(originalCwd)}${sep2}`;
-      return normalizedTarget.startsWith(normalizedCwd);
-    } catch {
-      return false;
-    }
-  }
-  if (target.startsWith("./") || target.startsWith(".\\") || !target.includes("/") && !target.includes("\\")) {
-    try {
-      const resolved = resolve3(resolveCwd, target);
-      const normalizedResolved = normalizePathForComparison2(resolved);
-      const normalizedOriginalCwd = normalizePathForComparison2(originalCwd);
-      return normalizedResolved.startsWith(`${normalizedOriginalCwd}${sep2}`) || normalizedResolved === normalizedOriginalCwd;
-    } catch {
-      return false;
-    }
-  }
-  if (target.startsWith("../")) {
-    return false;
-  }
-  try {
-    const resolved = resolve3(resolveCwd, target);
-    const normalizedResolved = normalizePathForComparison2(resolved);
-    const normalizedCwd = normalizePathForComparison2(originalCwd);
-    return normalizedResolved.startsWith(`${normalizedCwd}${sep2}`) || normalizedResolved === normalizedCwd;
-  } catch {
-    return false;
-  }
-}
-
 // src/core/analyze/parallel.ts
 var REASON_PARALLEL_RM = "parallel rm -rf with dynamic input is dangerous. Use explicit file list instead.";
 var REASON_PARALLEL_SHELL = "parallel with shell -c can execute arbitrary commands from dynamic input.";
@@ -3261,7 +3261,7 @@ function extractXargsChildCommandWithInfo(tokens) {
   return { childTokens: [], replacementToken };
 }
 
-// src/core/rules-custom.ts
+// src/core/rules/custom.ts
 function checkCustomRules(tokens, rules) {
   if (tokens.length === 0 || rules.length === 0) {
     return null;
@@ -3931,11 +3931,11 @@ import { existsSync as existsSync9, readFileSync as readFileSync8 } from "node:f
 import { homedir as homedir3 } from "node:os";
 import { join as join6, resolve as resolve6 } from "node:path";
 
-// src/core/rules-policy/config-file.ts
+// src/core/rules/policy/config-file.ts
 import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
 import { dirname as dirname5 } from "node:path";
 
-// src/core/rules-policy/paths.ts
+// src/core/rules/policy/paths.ts
 import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { dirname as dirname4, join as join3, resolve as resolve4 } from "node:path";
@@ -4017,7 +4017,7 @@ function getRepositoryRulebookPath(name) {
   return `${RULES_DIR}/${name}/${RULEBOOK_FILE}`;
 }
 
-// src/core/rules-policy/sources.ts
+// src/core/rules/policy/sources.ts
 var GITHUB_SOURCE_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#(.+)$/;
 var GITHUB_REPOSITORY_SOURCE_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]+$/;
 var GITHUB_REPOSITORY_REF_SOURCE_RE = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)#([A-Za-z0-9._-]+)$/;
@@ -4168,10 +4168,10 @@ function getConfiguredGitHubSource(spec) {
   }
 }
 
-// src/core/rules-policy/types.ts
+// src/core/rules/policy/types.ts
 var DEFAULT_CONFIG = { version: 1, rules: [], overrides: {} };
 
-// src/core/rules-policy/config-file.ts
+// src/core/rules/policy/config-file.ts
 function validateRulesConfig(config) {
   const errors = [];
   const sources = new Set;
@@ -4306,11 +4306,11 @@ function writeJsonAtomic(path, value) {
   renameSync(tempPath, path);
 }
 
-// src/core/rules-policy/scope-policy.ts
+// src/core/rules/policy/scope-policy.ts
 import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
 import { dirname as dirname6, isAbsolute as isAbsolute5, join as join5, relative, resolve as resolve5, sep as sep4 } from "node:path";
 
-// src/core/rulebook.ts
+// src/core/rules/rulebook.ts
 function validateRulebook(rulebook) {
   const errors = [];
   const ruleNames = new Set;
@@ -4503,7 +4503,7 @@ function assertValidRulebook(rulebook) {
   return parsed;
 }
 
-// src/core/rules-policy/lockfile.ts
+// src/core/rules/policy/lockfile.ts
 import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
 var SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 var RULEBOOK_SOURCE_KINDS = new Set(["local-directory", "github"]);
@@ -4615,7 +4615,7 @@ function requiredString(candidate, field) {
   return value;
 }
 
-// src/core/rules-policy/resolver.ts
+// src/core/rules/policy/resolver.ts
 import { createHash } from "node:crypto";
 import { existsSync as existsSync6, readFileSync as readFileSync5 } from "node:fs";
 import { join as join4 } from "node:path";
@@ -4770,7 +4770,7 @@ function sha256Digest(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
-// src/core/rules-policy/scope-policy.ts
+// src/core/rules/policy/scope-policy.ts
 function loadRulesPolicy(options = {}) {
   const paths = getPolicyPaths(options);
   const user = readRulesConfig(paths.userConfigPath);
@@ -4993,7 +4993,7 @@ function withTerminalPeriod(message) {
   return /[.!?]$/.test(message) ? message : `${message}.`;
 }
 
-// src/core/rules-policy/sync.ts
+// src/core/rules/policy/sync.ts
 import { existsSync as existsSync8, mkdirSync as mkdirSync2, readFileSync as readFileSync7, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { dirname as dirname7 } from "node:path";
 async function syncRulesConfig(options = {}) {
@@ -5391,7 +5391,7 @@ function validateParsedConfigFile(path, validate) {
   return validate(loaded.parsed);
 }
 
-// src/core/analyze.ts
+// src/core/analyze/index.ts
 function analyzeCommand(command, options = {}) {
   const config = options.config ?? loadConfig(options.cwd);
   return analyzeCommandInternal(command, 0, { ...options, config });

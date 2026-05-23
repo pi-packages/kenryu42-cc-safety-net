@@ -1,9 +1,4 @@
 import { extractShortOpts } from '@/core/shell';
-import {
-  getGitExecutionContext,
-  hasGitContextEnvOverride,
-  isLinkedWorktree,
-} from '@/core/worktree';
 import { hasRecursiveSubmoduleConfig } from './config';
 import { extractGitSubcommandAndRest, splitAtDoubleDash } from './parse';
 import {
@@ -11,6 +6,7 @@ import {
   type GitRuleMatch,
   SWITCH_SHORT_OPTS_WITH_VALUE,
 } from './rules';
+import { getGitExecutionContext, hasGitContextEnvOverride, isLinkedWorktree } from './worktree';
 
 export interface GitAnalyzeOptions {
   cwd?: string;

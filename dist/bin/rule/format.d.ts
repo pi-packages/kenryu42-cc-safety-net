@@ -1,4 +1,4 @@
-import { type RulebookLockEntryWithStats } from '@/core/rules-policy';
+import { type RulebookLockEntryWithStats } from '@/core/rules/policy';
 export declare function printSyncResult(result: {
     ok: boolean;
     errors: string[];

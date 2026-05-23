@@ -17,12 +17,12 @@ import {
   hasGitContextEnvOverride,
   isLinkedWorktree,
   normalizePathForComparison,
-} from '@/core/worktree';
+} from '@/core/git/worktree';
 import {
   createLinkedWorktreeFixture,
   createSubmoduleLikeGitFileFixture,
   withEnv,
-} from '../helpers.ts';
+} from '../../helpers.ts';
 
 function getLinkedGitDir(worktree: string): string {
   const dotGitPath = join(worktree, '.git');

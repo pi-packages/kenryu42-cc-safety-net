@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { hasConfigAffectingEnvAssignment, isGitConfigEnvName } from '@/core/git/env';
-import { findDotGitInAncestors, GIT_GLOBAL_OPTS_WITH_VALUE } from '@/core/worktree';
+import { hasConfigAffectingEnvAssignment, isGitConfigEnvName } from './env';
+import { findDotGitInAncestors, GIT_GLOBAL_OPTS_WITH_VALUE } from './worktree';
 
 export const TRUSTED_GIT_BINARIES = [
   '/usr/bin/git',

@@ -1,5 +1,5 @@
 import { getBasename } from '@/core/shell';
-import { GIT_GLOBAL_OPTS_WITH_VALUE } from '@/core/worktree';
+import { GIT_GLOBAL_OPTS_WITH_VALUE } from './worktree';
 
 export function splitAtDoubleDash(tokens: readonly string[]): {
   index: number;

@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { GIT_CONTEXT_ENV_OVERRIDES } from '@/core/git/env';
 import { resolveChdirTarget } from '@/core/path';
+import { GIT_CONTEXT_ENV_OVERRIDES } from './env';
 
 export const GIT_GLOBAL_OPTS_WITH_VALUE: ReadonlySet<string> = new Set([
   '-c',
