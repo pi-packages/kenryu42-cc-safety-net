@@ -191,14 +191,15 @@ claude-code-safety-net/
 │   ├── bin/
 │   │   └── cc-safety-net.ts  # Claude Code CLI entry point
 │   └── core/
-│       ├── analyze.ts        # Main analysis orchestration
 │       ├── analyze/          # Analysis submodules
+│       │   ├── index.ts           # Main analysis orchestration
 │       │   ├── analyze-command.ts  # Command analysis entry
 │       │   ├── constants.ts        # Shared constants
 │       │   ├── dangerous-text.ts   # Text pattern detection
 │       │   ├── find.ts             # find command analysis
 │       │   ├── interpreters.ts     # Interpreter one-liner detection
 │       │   ├── parallel.ts         # parallel command analysis
+│       │   ├── rm.ts               # rm command analysis
 │       │   ├── rm-flags.ts         # rm flag parsing
 │       │   ├── segment.ts          # Command segment analysis
 │       │   ├── shell-wrappers.ts   # Shell wrapper detection
@@ -206,12 +207,10 @@ claude-code-safety-net/
 │       │   └── xargs.ts            # xargs command analysis
 │       ├── audit.ts          # Audit logging
 │       ├── config.ts         # Config loading
-│       ├── custom-rules-doc.ts # Custom rules documentation
 │       ├── env.ts            # Environment variable utilities
 │       ├── format.ts         # Output formatting
-│       ├── rules-git.ts      # Git subcommand analysis
-│       ├── rules-rm.ts       # rm command analysis
-│       ├── rules-custom.ts   # Custom rule evaluation
+│       ├── git/              # Git parsing, config, worktree, and safety rules
+│       ├── rules/            # Custom rulebooks, policy, and matching
 │       └── shell.ts          # Shell parsing utilities
 ├── tests/
 │   ├── helpers.ts            # Test utilities
@@ -239,15 +238,15 @@ claude-code-safety-net/
 
 | Module | Purpose |
 |--------|---------|
-| `analyze.ts` | Main entry, command analysis orchestration |
+| `analyze/index.ts` | Main entry, command analysis orchestration |
 | `analyze/` | Submodules for specific analysis tasks (find, xargs, parallel, interpreters, etc.) |
 | `audit.ts` | Audit logging to `~/.cc-safety-net/logs/` |
 | `config.ts` | Config loading (`.safety-net.json`, `~/.cc-safety-net/config.json`) |
 | `env.ts` | Environment variable utilities (`envTruthy`) |
 | `format.ts` | Output formatting (`formatBlockedMessage`) |
-| `rules-git.ts` | Git rules (checkout, restore, reset, clean, push, branch, stash) |
-| `rules-rm.ts` | rm analysis (cwd-relative, temp paths, root/home detection) |
-| `rules-custom.ts` | Custom rule matching |
+| `git/` | Git rules, parsing, config, environment, and worktree handling |
+| `analyze/rm.ts` | rm analysis (cwd-relative, temp paths, root/home detection) |
+| `rules/custom.ts` | Custom rule matching |
 | `shell.ts` | Shell parsing (`splitShellCommands`, `shlexSplit`, `stripWrappers`) |
 
 ## Development Workflow
@@ -284,7 +283,7 @@ bun run build
 | Formatter/Linter | **Biome** |
 | Type Hints | Required on all functions |
 | Type Syntax | `type \| null` preferred over `type \| undefined` |
-| File Naming | `kebab-case` (e.g., `rules-git.ts`, not `rulesGit.ts`) |
+| File Naming | `kebab-case` (e.g., `worktree-relaxation.ts`, not `worktreeRelaxation.ts`) |
 | Function Naming | `camelCase` for functions, `PascalCase` for types/interfaces |
 | Constants | `SCREAMING_SNAKE_CASE` for reason constants |
 | Imports | Relative imports within package |
@@ -316,12 +315,12 @@ export function analyzeCommand(command, options) {  // Missing type hints
 
 ### Adding a Git Rule
 
-1. **Add reason constant** in `src/core/rules-git.ts`:
+1. **Add reason constant** in `src/core/git/rules.ts`:
    ```typescript
    const REASON_MY_RULE = "git my-command does something dangerous. Use safer alternative.";
    ```
 
-2. **Add detection logic** in `analyzeGit()`:
+2. **Add detection logic** in `analyzeGitRule()`:
    ```typescript
    if (subcommand === "my-command" && tokens.includes("--dangerous-flag")) {
      return REASON_MY_RULE;
@@ -348,13 +347,13 @@ export function analyzeCommand(command, options) {  // Missing type hints
 
 ### Adding an rm Rule
 
-1. **Add logic** in `src/core/rules-rm.ts`
-2. **Add tests** in `tests/rules-rm.test.ts`
+1. **Add logic** in `src/core/analyze/rm.ts`
+2. **Add tests** in `tests/core/rules-rm.test.ts`
 3. **Run checks**: `bun run check`
 
 ### Adding Other Command Rules
 
-1. **Add reason constant** in `src/core/analyze.ts`:
+1. **Add reason constant** in the relevant analyzer file under `src/core/analyze/`:
    ```typescript
    const REASON_MY_COMMAND = "my-command is dangerous because...";
    ```
