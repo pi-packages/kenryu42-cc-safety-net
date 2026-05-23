@@ -69,9 +69,9 @@ function expectParallelRuleStep(command: string) {
 }
 
 function writeExplainRulebookFixture(tempDir: string): void {
-  mkdirSync(join(tempDir, '.cc-safetynet-rules', 'docker-rules'), { recursive: true });
+  mkdirSync(join(tempDir, '.cc-safety-net/rules', 'docker-rules'), { recursive: true });
   writeFileSync(
-    join(tempDir, '.cc-safetynet-rules', 'docker-rules', 'rulebook.json'),
+    join(tempDir, '.cc-safety-net/rules', 'docker-rules', 'rulebook.json'),
     JSON.stringify({
       rulebook_version: 1,
       name: 'docker-rules',
@@ -576,7 +576,7 @@ describe('explainCommand guard parity fixes', () => {
     try {
       writeExplainRulebookFixture(tempDir);
       writeFileSync(
-        join(tempDir, '.cc-safetynet-rules', 'rule.json'),
+        join(tempDir, '.cc-safety-net/rules', 'rule.json'),
         JSON.stringify({
           version: 1,
           rules: ['docker-rules'],

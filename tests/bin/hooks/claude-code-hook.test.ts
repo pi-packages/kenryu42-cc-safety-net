@@ -25,16 +25,16 @@ describe('Claude Code hook', () => {
     });
 
     test('policy fail-closed denial shows repair command without manual permission footer', async () => {
-      rmSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true, force: true });
-      mkdirSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true });
+      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
+      mkdirSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true });
       writeFileSync(
-        join(TEST_HOOK_CWD, '.cc-safetynet-rules', 'rule.json'),
+        join(TEST_HOOK_CWD, '.cc-safety-net/rules', 'rule.json'),
         JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
         'utf-8',
       );
 
       const result = await runClaudeCodeHook(claudeCodeBashInput('git status --short --branch'));
-      rmSync(join(TEST_HOOK_CWD, '.cc-safetynet-rules'), { recursive: true, force: true });
+      rmSync(join(TEST_HOOK_CWD, '.cc-safety-net/rules'), { recursive: true, force: true });
 
       const parsed = JSON.parse(result.stdout);
       expect(result.exitCode).toBe(0);

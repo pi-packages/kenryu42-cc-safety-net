@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { createLinkedWorktreeFixture, runSafetyNetCli, withTempDir } from '../../helpers.ts';
 
 function writeGitRulebook(dir: string): void {
-  mkdirSync(join(dir, '.cc-safetynet-rules', 'git-rules'), { recursive: true });
+  mkdirSync(join(dir, '.cc-safety-net/rules', 'git-rules'), { recursive: true });
   writeFileSync(
-    join(dir, '.cc-safetynet-rules', 'git-rules', 'rulebook.json'),
+    join(dir, '.cc-safety-net/rules', 'git-rules', 'rulebook.json'),
     JSON.stringify({
       rulebook_version: 1,
       name: 'git-rules',
@@ -168,7 +168,7 @@ describe('explain CLI flag parsing', () => {
 
   test('explain --json reports custom rule reason override metadata', async () => {
     await withGitRulebook(async (tempDir, env) => {
-      const configPath = join(tempDir, '.cc-safetynet-rules', 'rule.json');
+      const configPath = join(tempDir, '.cc-safety-net/rules', 'rule.json');
       writeFileSync(
         configPath,
         JSON.stringify({

@@ -15,7 +15,7 @@ describe('builtin OpenCode commands', () => {
   test('uses the current rulebook repository path', () => {
     const template = loadBuiltinCommands()['cc-safetynet-rules']?.template;
 
-    expect(template).toContain('.cc-safetynet-rules/<rulebook-name>/rulebook.json');
+    expect(template).toContain('.cc-safety-net/rules/<rulebook-name>/rulebook.json');
     expect(template).not.toContain('`cc-safetynet-rules/<rulebook-name>/rulebook.json`');
   });
 });

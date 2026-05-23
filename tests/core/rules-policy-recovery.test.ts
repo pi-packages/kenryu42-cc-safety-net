@@ -131,7 +131,7 @@ describe('rules policy recovery coverage', () => {
       repo: 'repo',
       ref: 'main',
       commit: 'abc123',
-      path: '.cc-safetynet-rules/project-rules/rulebook.json',
+      path: '.cc-safety-net/rules/project-rules/rulebook.json',
       name: 'project-rules',
       version: '1.0.0',
       digest: 'sha256:'.padEnd(71, 'a'),
@@ -152,6 +152,10 @@ describe('rules policy recovery coverage', () => {
       expect(getRulebookCachePath(githubEntry, { cacheConfigDir: tempDir })).toContain(
         'owner-repo-feature-project-rules',
       );
+      expect(getProjectRulesDir(tempDir)).toBe(join(tempDir, '.cc-safety-net', 'rules'));
+      expect(
+        getRulebookCachePath(githubEntry, { cacheConfigDir: getProjectRulesDir(tempDir) }),
+      ).toContain(join(tempDir, '.cc-safety-net', 'cache', 'rulebooks'));
 
       expect(getRulebookSourceSyntaxError('builtin:old')).toContain('Invalid rulebook source');
       expect(getRulebookSourceSyntaxError('project-rules')).toBeNull();
@@ -168,7 +172,7 @@ describe('rules policy recovery coverage', () => {
         owner: 'owner',
         repo: 'repo',
         ref: 'main',
-        path: '.cc-safetynet-rules/project-rules/rulebook.json',
+        path: '.cc-safety-net/rules/project-rules/rulebook.json',
         name: 'project-rules',
       });
       expect(() => parseGitHubSource('github:owner/repo#main/project-rules')).toThrow();
@@ -338,7 +342,7 @@ describe('rules policy recovery coverage', () => {
       repo: 'repo',
       ref: 'main',
       commit: 'abc123',
-      path: '.cc-safetynet-rules/alpha/rulebook.json',
+      path: '.cc-safety-net/rules/alpha/rulebook.json',
       name: 'alpha',
       version: '1.0.0',
       digest: 'sha256:'.padEnd(71, '0'),
@@ -439,15 +443,15 @@ describe('rules policy recovery coverage', () => {
           return new Response(
             JSON.stringify({
               tree: [
-                { path: '.cc-safetynet-rules/zeta/ignored.txt', type: 'blob' },
-                { path: '.cc-safetynet-rules/alpha/rulebook.json', type: 'blob' },
+                { path: '.cc-safety-net/rules/zeta/ignored.txt', type: 'blob' },
+                { path: '.cc-safety-net/rules/alpha/rulebook.json', type: 'blob' },
               ],
             }),
           );
         }
         if (
           url ===
-          'https://raw.githubusercontent.com/owner/repo/abc123/.cc-safetynet-rules/alpha/rulebook.json'
+          'https://raw.githubusercontent.com/owner/repo/abc123/.cc-safety-net/rules/alpha/rulebook.json'
         ) {
           return new Response(alphaRulebook);
         }

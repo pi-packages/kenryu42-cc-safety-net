@@ -90,8 +90,8 @@ describe('help output', () => {
     test('contains CONFIG FILES section', () => {
       const { output } = captureOutput(() => printHelp());
       expect(output).toContain('CONFIG FILES:');
-      expect(output).toContain('~/.cc-safetynet-rules/rule.json');
-      expect(output).toContain('.cc-safetynet-rules/rule.json');
+      expect(output).toContain('~/.cc-safety-net/rules/rule.json');
+      expect(output).toContain('.cc-safety-net/rules/rule.json');
     });
   });
 
