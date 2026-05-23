@@ -5,6 +5,7 @@ export const claudeCodeCommand: Command = {
   aliases: ['-cc', '--claude-code'],
   description: 'Run as Claude Code PreToolUse hook (reads JSON from stdin)',
   usage: 'hook -cc, hook --claude-code',
+  hidden: true,
   options: [
     {
       flags: '-h, --help',

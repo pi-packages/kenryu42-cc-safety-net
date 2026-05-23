@@ -221,6 +221,7 @@ var claudeCodeCommand = {
   aliases: ["-cc", "--claude-code"],
   description: "Run as Claude Code PreToolUse hook (reads JSON from stdin)",
   usage: "hook -cc, hook --claude-code",
+  hidden: true,
   options: [
     {
       flags: "-h, --help",
@@ -236,6 +237,7 @@ var copilotCliCommand = {
   aliases: ["-cp", "--copilot-cli"],
   description: "Run as Copilot CLI PreToolUse hook (reads JSON from stdin)",
   usage: "hook -cp, hook --copilot-cli",
+  hidden: true,
   options: [
     {
       flags: "-h, --help",
@@ -306,6 +308,7 @@ var geminiCliCommand = {
   aliases: ["-gc", "--gemini-cli"],
   description: "Run as Gemini CLI BeforeTool hook (reads JSON from stdin)",
   usage: "hook -gc, hook --gemini-cli",
+  hidden: true,
   options: [
     {
       flags: "-h, --help",
@@ -319,7 +322,7 @@ var geminiCliCommand = {
 var hookCommand = {
   name: "hook",
   description: "Run as an agent CLI hook (reads JSON from stdin)",
-  usage: "hook <platform>",
+  usage: "hook <coding cli>",
   subcommands: [
     { usage: "install --opencode", description: "Install OpenCode hook config" },
     { usage: "install --kimi-cli", description: "Install Kimi CLI hook config" },
@@ -7955,7 +7958,13 @@ function getSubcommandsColumnWidth(subcommands) {
 }
 function formatCommandSummary(cmd, maxUsageWidth) {
   const usage = `${PROGRAM_NAME} ${cmd.usage}`;
-  return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 3)}${cmd.description}`;
+  if (cmd.name === "hook") {
+    return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 6)}${cmd.description}`;
+  }
+  return `${INDENT}${usage.padEnd(maxUsageWidth + PROGRAM_NAME.length + 4)}${cmd.description}`;
+}
+function formatEnvironmentVariable(name, description) {
+  return `${INDENT}${name.padEnd(40)}${description}`;
 }
 function printCommandHelp(command) {
   const lines = [];
@@ -8014,18 +8023,13 @@ function printHelp() {
   lines.push(`${INDENT}${PROGRAM_NAME} <command> --help   Show help for a specific command`);
   lines.push("");
   lines.push("ENVIRONMENT VARIABLES:");
-  lines.push(`${INDENT}${ENV_FLAGS.strict.name}=1               Fail-closed on unparseable commands`);
-  lines.push(`${INDENT}${ENV_FLAGS.paranoid.name}=1             Enable all paranoid checks`);
-  lines.push(`${INDENT}${ENV_FLAGS.paranoidRm.name}=1          Block non-temp rm -rf within cwd`);
-  lines.push(`${INDENT}${ENV_FLAGS.paranoidInterpreters.name}=1  Block interpreter one-liners`);
-  lines.push(`${INDENT}${ENV_FLAGS.worktree.name}=1             Allow local git discards in linked worktrees`);
-  lines.push(`${INDENT}${ENV_FLAGS.debug.name}=1              Log allowed hook commands for debugging`);
-  lines.push(`${INDENT}CC_SAFETY_NET_HOME             Override rule config home directory`);
-  lines.push(`${INDENT}Legacy SAFETY_NET_* names remain supported as fallbacks`);
-  lines.push("");
-  lines.push("CONFIG FILES:");
-  lines.push(`${INDENT}~/.cc-safety-net/rules/rule.json       User-scope rule config`);
-  lines.push(`${INDENT}.cc-safety-net/rules/rule.json         Project-scope rule config`);
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.strict.name}=1`, "Fail-closed on unparseable commands"));
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.paranoid.name}=1`, "Enable all paranoid checks"));
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.paranoidRm.name}=1`, "Block non-temp rm -rf within cwd"));
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.paranoidInterpreters.name}=1`, "Block interpreter one-liners"));
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.worktree.name}=1`, "Allow local git discards in linked worktrees"));
+  lines.push(formatEnvironmentVariable(`${ENV_FLAGS.debug.name}=1`, "Log allowed hook commands for debugging"));
+  lines.push(formatEnvironmentVariable("CC_SAFETY_NET_HOME", "Override rule config home directory"));
   console.log(lines.join(`
 `));
 }

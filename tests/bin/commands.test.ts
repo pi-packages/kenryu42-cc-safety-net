@@ -49,13 +49,8 @@ describe('command registry', () => {
       const visible = getVisibleCommands();
       expect(visible.length).toBeGreaterThan(0);
 
-      // Verify expected commands are present
       const names = visible.map((c) => c.name);
-      expect(names).toContain('doctor');
-      expect(names).toContain('explain');
-      expect(names).toContain('rule');
-      expect(names).toContain('claude-code');
-      expect(names).toContain('gemini-cli');
+      expect(names).toEqual(['doctor', 'explain', 'rule', 'hook', 'statusline']);
     });
   });
 });

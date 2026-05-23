@@ -5,6 +5,7 @@ export const copilotCliCommand: Command = {
   aliases: ['-cp', '--copilot-cli'],
   description: 'Run as Copilot CLI PreToolUse hook (reads JSON from stdin)',
   usage: 'hook -cp, hook --copilot-cli',
+  hidden: true,
   options: [
     {
       flags: '-h, --help',
