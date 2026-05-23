@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { envTruthy } from '@/core/env';
+import { getSafetyNetEnvModes } from '@/core/env';
 
 /**
  * Read piped stdin content asynchronously.
@@ -79,30 +79,26 @@ export async function printStatusline(): Promise<void> {
   if (!enabled) {
     status = '🛡️ Safety Net ❌';
   } else {
-    const strict = envTruthy('SAFETY_NET_STRICT');
-    const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
-    const paranoidRm = paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM');
-    const paranoidInterpreters = paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS');
-    const worktreeMode = envTruthy('SAFETY_NET_WORKTREE');
+    const modes = getSafetyNetEnvModes();
 
     let modeEmojis = '';
 
     // Strict mode: 🔒
-    if (strict) {
+    if (modes.strict) {
       modeEmojis += '🔒';
     }
 
     // Paranoid modes: 👁️ if PARANOID or (PARANOID_RM + PARANOID_INTERPRETERS)
     // Otherwise individual emojis: 🗑️ for RM, 🐚 for interpreters
-    if (paranoidAll || (paranoidRm && paranoidInterpreters)) {
+    if (modes.paranoidAll || (modes.paranoidRm && modes.paranoidInterpreters)) {
       modeEmojis += '👁️';
-    } else if (paranoidRm) {
+    } else if (modes.paranoidRm) {
       modeEmojis += '🗑️';
-    } else if (paranoidInterpreters) {
+    } else if (modes.paranoidInterpreters) {
       modeEmojis += '🐚';
     }
 
-    if (worktreeMode) {
+    if (modes.worktreeMode) {
       modeEmojis += '🌳';
     }
 

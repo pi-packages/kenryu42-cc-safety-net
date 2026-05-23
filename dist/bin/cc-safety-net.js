@@ -3181,6 +3181,16 @@ var ENV_FLAGS = {
   worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
   debug: { name: "CC_SAFETY_NET_DEBUG" }
 };
+function getSafetyNetEnvModes() {
+  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
+  return {
+    strict: envTruthy(ENV_FLAGS.strict),
+    paranoidAll,
+    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
+    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
+    worktreeMode: envTruthy(ENV_FLAGS.worktree)
+  };
+}
 function envTruthy(flag) {
   const value = typeof flag === "string" ? process.env[flag] : getEnvFlagValue(flag);
   return value === "1" || value?.toLowerCase() === "true";
@@ -6987,15 +6997,15 @@ function getConfigSource(options) {
 }
 function buildAnalyzeOptions(explainOptions) {
   const cwd = resolve7(explainOptions?.cwd ?? process.cwd());
-  const paranoidAll = envTruthy("SAFETY_NET_PARANOID");
+  const modes = getSafetyNetEnvModes();
   return {
     cwd,
     effectiveCwd: cwd,
     config: explainOptions?.config ?? loadConfig(cwd, { userConfigDir: explainOptions?.userConfigDir }),
-    strict: explainOptions?.strict ?? envTruthy("SAFETY_NET_STRICT"),
-    paranoidRm: paranoidAll || envTruthy("SAFETY_NET_PARANOID_RM"),
-    paranoidInterpreters: paranoidAll || envTruthy("SAFETY_NET_PARANOID_INTERPRETERS"),
-    worktreeMode: envTruthy("SAFETY_NET_WORKTREE")
+    strict: explainOptions?.strict ?? modes.strict,
+    paranoidRm: modes.paranoidRm,
+    paranoidInterpreters: modes.paranoidInterpreters,
+    worktreeMode: modes.worktreeMode
   };
 }
 
@@ -9590,23 +9600,19 @@ async function printStatusline() {
   if (!enabled) {
     status = "\uD83D\uDEE1️ Safety Net ❌";
   } else {
-    const strict = envTruthy("SAFETY_NET_STRICT");
-    const paranoidAll = envTruthy("SAFETY_NET_PARANOID");
-    const paranoidRm = paranoidAll || envTruthy("SAFETY_NET_PARANOID_RM");
-    const paranoidInterpreters = paranoidAll || envTruthy("SAFETY_NET_PARANOID_INTERPRETERS");
-    const worktreeMode = envTruthy("SAFETY_NET_WORKTREE");
+    const modes = getSafetyNetEnvModes();
     let modeEmojis = "";
-    if (strict) {
+    if (modes.strict) {
       modeEmojis += "\uD83D\uDD12";
     }
-    if (paranoidAll || paranoidRm && paranoidInterpreters) {
+    if (modes.paranoidAll || modes.paranoidRm && modes.paranoidInterpreters) {
       modeEmojis += "\uD83D\uDC41️";
-    } else if (paranoidRm) {
+    } else if (modes.paranoidRm) {
       modeEmojis += "\uD83D\uDDD1️";
-    } else if (paranoidInterpreters) {
+    } else if (modes.paranoidInterpreters) {
       modeEmojis += "\uD83D\uDC1A";
     }
-    if (worktreeMode) {
+    if (modes.worktreeMode) {
       modeEmojis += "\uD83C\uDF33";
     }
     const statusEmoji = modeEmojis || "✅";

@@ -1641,6 +1641,16 @@ var ENV_FLAGS = {
   worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
   debug: { name: "CC_SAFETY_NET_DEBUG" }
 };
+function getSafetyNetEnvModes() {
+  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
+  return {
+    strict: envTruthy(ENV_FLAGS.strict),
+    paranoidAll,
+    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
+    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
+    worktreeMode: envTruthy(ENV_FLAGS.worktree)
+  };
+}
 function envTruthy(flag) {
   const value = typeof flag === "string" ? process.env[flag] : getEnvFlagValue(flag);
   return value === "1" || value?.toLowerCase() === "true";
@@ -5457,11 +5467,7 @@ function loadBuiltinCommands(disabledCommands) {
 }
 // src/index.ts
 var SafetyNetPlugin = async ({ directory }) => {
-  const strict = envTruthy("SAFETY_NET_STRICT");
-  const paranoidAll = envTruthy("SAFETY_NET_PARANOID");
-  const paranoidRm = paranoidAll || envTruthy("SAFETY_NET_PARANOID_RM");
-  const paranoidInterpreters = paranoidAll || envTruthy("SAFETY_NET_PARANOID_INTERPRETERS");
-  const worktreeMode = envTruthy("SAFETY_NET_WORKTREE");
+  const modes = getSafetyNetEnvModes();
   return {
     config: async (opencodeConfig) => {
       const builtinCommands = loadBuiltinCommands();
@@ -5477,10 +5483,10 @@ var SafetyNetPlugin = async ({ directory }) => {
         const result = analyzeCommand(command, {
           cwd: directory,
           config: loadConfig(directory, { repairLocalRulebooks: true }),
-          strict,
-          paranoidRm,
-          paranoidInterpreters,
-          worktreeMode
+          strict: modes.strict,
+          paranoidRm: modes.paranoidRm,
+          paranoidInterpreters: modes.paranoidInterpreters,
+          worktreeMode: modes.worktreeMode
         });
         if (result) {
           const message = formatBlockedMessage({

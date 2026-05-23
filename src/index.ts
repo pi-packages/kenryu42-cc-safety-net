@@ -1,15 +1,11 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
-import { envTruthy } from '@/core/env';
+import { getSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
 export const SafetyNetPlugin: Plugin = async ({ directory }) => {
-  const strict = envTruthy('SAFETY_NET_STRICT');
-  const paranoidAll = envTruthy('SAFETY_NET_PARANOID');
-  const paranoidRm = paranoidAll || envTruthy('SAFETY_NET_PARANOID_RM');
-  const paranoidInterpreters = paranoidAll || envTruthy('SAFETY_NET_PARANOID_INTERPRETERS');
-  const worktreeMode = envTruthy('SAFETY_NET_WORKTREE');
+  const modes = getSafetyNetEnvModes();
 
   return {
     config: async (opencodeConfig: Record<string, unknown>) => {
@@ -28,10 +24,10 @@ export const SafetyNetPlugin: Plugin = async ({ directory }) => {
         const result = analyzeCommand(command, {
           cwd: directory,
           config: loadConfig(directory, { repairLocalRulebooks: true }),
-          strict,
-          paranoidRm,
-          paranoidInterpreters,
-          worktreeMode,
+          strict: modes.strict,
+          paranoidRm: modes.paranoidRm,
+          paranoidInterpreters: modes.paranoidInterpreters,
+          worktreeMode: modes.worktreeMode,
         });
         if (result) {
           const message = formatBlockedMessage({
