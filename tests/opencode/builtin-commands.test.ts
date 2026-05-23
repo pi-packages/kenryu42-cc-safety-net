@@ -11,4 +11,11 @@ describe('builtin OpenCode commands', () => {
       skill.slice(skill.indexOf('## Workflow')),
     );
   });
+
+  test('uses the current rulebook repository path', () => {
+    const template = loadBuiltinCommands()['cc-safetynet-rules']?.template;
+
+    expect(template).toContain('.cc-safetynet-rules/<rulebook-name>/rulebook.json');
+    expect(template).not.toContain('`cc-safetynet-rules/<rulebook-name>/rulebook.json`');
+  });
 });
