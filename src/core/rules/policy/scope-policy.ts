@@ -267,24 +267,48 @@ function getLegacyRulesConfigErrors(
 ): string[] {
   return Array.from(
     new Set([
-      ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath),
+      ...getLegacyRulesConfigError(
+        getLegacyUserRulesConfigPath(options),
+        paths.userConfigPath,
+        '~/.cc-safety-net/config.json',
+      ),
       ...getLegacyRulesConfigError(
         getLegacyProjectRulesConfigPath(options),
         paths.projectConfigPath,
+        '.safety-net.json',
       ),
     ]),
   );
 }
 
-function getLegacyRulesConfigError(legacyPath: string, configPath: string): string[] {
-  if (existsSync(configPath) || !existsSync(legacyPath)) return [];
-  try {
-    const parsed = JSON.parse(readFileSync(legacyPath, 'utf-8')) as { version?: unknown };
-    if (parsed.version === 1) return [];
-  } catch {
-    // Invalid legacy config should fail closed below.
-  }
+function getLegacyRulesConfigError(
+  legacyPath: string,
+  configPath: string,
+  migratedFrom: string,
+): string[] {
+  if (!existsSync(legacyPath)) return [];
+  if (hasMigrationEvidence(configPath, migratedFrom)) return [];
   return [`legacy rules config location is no longer used; run ${RULE_MIGRATE_COMMAND}`];
+}
+
+function hasMigrationEvidence(configPath: string, migratedFrom: string): boolean {
+  const config = readRulesConfig(configPath).config;
+  if (!config) return false;
+  return config.rules.some(
+    (source) => getRulebookMigratedFrom(dirname(configPath), source) === migratedFrom,
+  );
+}
+
+export function getRulebookMigratedFrom(configDir: string, source: string): string | null {
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source)) return null;
+  const path = join(configDir, source, RULEBOOK_FILE);
+  if (!existsSync(path)) return null;
+  try {
+    const rulebook = JSON.parse(readFileSync(path, 'utf-8')) as Record<string, unknown>;
+    return typeof rulebook.migrated_from === 'string' ? rulebook.migrated_from : null;
+  } catch {
+    return null;
+  }
 }
 
 function getLocalSourceDriftError(spec: string, content: string): string {

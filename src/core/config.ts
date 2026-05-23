@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import {
   COMMAND_PATTERN,
   type Config,
@@ -11,11 +10,6 @@ import {
 import { validateRulesConfig } from './rules/policy/config-file';
 import { loadRulesPolicy, rulesPolicyToConfig } from './rules/policy/scope-policy';
 import { repairLocalRulesPolicy } from './rules/policy/sync';
-
-const DEFAULT_CONFIG: Config = {
-  version: 1,
-  rules: [],
-};
 
 export interface LoadConfigOptions {
   /** Override user config directory (for testing) */
@@ -29,83 +23,9 @@ export function loadConfig(cwd?: string, options?: LoadConfigOptions): Config {
   if (options?.repairLocalRulebooks) {
     repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
   }
-  const userConfigDir = options?.userConfigDir ?? join(homedir(), '.cc-safety-net');
-  const userConfigPath = join(userConfigDir, 'config.json');
-  const projectConfigPath = join(safeCwd, '.safety-net.json');
-
-  const userConfig = loadSingleConfig(userConfigPath);
-  const projectConfig = loadSingleConfig(projectConfigPath);
-  let rulesPolicyConfig = rulesPolicyToConfig(
+  return rulesPolicyToConfig(
     loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }),
   );
-  if (rulesPolicyConfig.failClosedReason && (userConfig || projectConfig)) {
-    rulesPolicyConfig = DEFAULT_CONFIG;
-  }
-
-  return mergeConfigs(mergeConfigs(userConfig, projectConfig), rulesPolicyConfig);
-}
-
-function loadSingleConfig(path: string): Config | null {
-  if (!existsSync(path)) {
-    return null;
-  }
-
-  try {
-    const content = readFileSync(path, 'utf-8');
-    if (!content.trim()) {
-      return null;
-    }
-
-    const parsed = JSON.parse(content) as unknown;
-    const result = validateConfig(parsed);
-
-    if (result.errors.length > 0) {
-      return null;
-    }
-
-    // Ensure rules array exists (may be undefined if not in input)
-    const cfg = parsed as Record<string, unknown>;
-    return {
-      version: cfg.version as number,
-      rules: (cfg.rules as Config['rules']) ?? [],
-    };
-  } catch {
-    return null;
-  }
-}
-
-function mergeConfigs(userConfig: Config | null, projectConfig: Config | null): Config {
-  if (userConfig?.failClosedReason || projectConfig?.failClosedReason) {
-    return {
-      version: 1,
-      rules: [],
-      failClosedReason: userConfig?.failClosedReason ?? projectConfig?.failClosedReason,
-    };
-  }
-
-  if (!userConfig && !projectConfig) {
-    return DEFAULT_CONFIG;
-  }
-
-  if (!userConfig) {
-    return projectConfig ?? DEFAULT_CONFIG;
-  }
-
-  if (!projectConfig) {
-    return userConfig;
-  }
-
-  const projectRuleNames = new Set(projectConfig.rules.map((r) => r.name.toLowerCase()));
-
-  const mergedRules = [
-    ...userConfig.rules.filter((r) => !projectRuleNames.has(r.name.toLowerCase())),
-    ...projectConfig.rules,
-  ];
-
-  return {
-    version: 1,
-    rules: mergedRules,
-  };
 }
 
 /** @internal Exported for testing */
@@ -238,16 +158,8 @@ function readConfigFileInput(path: string): ConfigFileInput {
   }
 }
 
-export function getUserConfigPath(): string {
-  return join(homedir(), '.cc-safety-net', 'config.json');
-}
-
-export function getProjectConfigPath(cwd?: string): string {
-  return resolve(cwd ?? process.cwd(), '.safety-net.json');
-}
-
 export function getLegacyProjectConfigPath(cwd?: string): string {
-  return getProjectConfigPath(cwd);
+  return resolve(cwd ?? process.cwd(), '.safety-net.json');
 }
 
 export function validateRulesConfigFile(path: string): ValidationResult {

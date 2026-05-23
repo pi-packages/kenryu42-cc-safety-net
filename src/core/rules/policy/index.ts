@@ -18,6 +18,7 @@ export {
   RULES_DIR,
 } from './paths';
 export {
+  getRulebookMigratedFrom,
   getRulesConfigRuntimeErrorsForConfig,
   getRulesConfigSourceDisplayMap,
   getUnknownOverrideErrorsForConfig,

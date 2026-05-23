@@ -3928,8 +3928,7 @@ function getSetOptionChanges(tokens, commandIndex) {
 
 // src/core/config.ts
 import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join6, resolve as resolve6 } from "node:path";
+import { resolve as resolve6 } from "node:path";
 
 // src/core/rules/policy/config-file.ts
 import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
@@ -4928,19 +4927,35 @@ function rulesPolicyToConfig(policy) {
 }
 function getLegacyRulesConfigErrors(paths, options) {
   return Array.from(new Set([
-    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath),
-    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath)
+    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath, "~/.cc-safety-net/config.json"),
+    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath, ".safety-net.json")
   ]));
 }
-function getLegacyRulesConfigError(legacyPath, configPath) {
-  if (existsSync6(configPath) || !existsSync6(legacyPath))
+function getLegacyRulesConfigError(legacyPath, configPath, migratedFrom) {
+  if (!existsSync6(legacyPath))
     return [];
-  try {
-    const parsed = JSON.parse(readFileSync6(legacyPath, "utf-8"));
-    if (parsed.version === 1)
-      return [];
-  } catch {}
+  if (hasMigrationEvidence(configPath, migratedFrom))
+    return [];
   return [`legacy rules config location is no longer used; run ${RULE_MIGRATE_COMMAND}`];
+}
+function hasMigrationEvidence(configPath, migratedFrom) {
+  const config = readRulesConfig(configPath).config;
+  if (!config)
+    return false;
+  return config.rules.some((source) => getRulebookMigratedFrom(dirname6(configPath), source) === migratedFrom);
+}
+function getRulebookMigratedFrom(configDir, source) {
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source))
+    return null;
+  const path = join5(configDir, source, RULEBOOK_FILE);
+  if (!existsSync6(path))
+    return null;
+  try {
+    const rulebook = JSON.parse(readFileSync6(path, "utf-8"));
+    return typeof rulebook.migrated_from === "string" ? rulebook.migrated_from : null;
+  } catch {
+    return null;
+  }
 }
 function getLocalSourceDriftError(spec, content) {
   try {
@@ -5196,75 +5211,12 @@ function restoreConfig(path, content) {
 }
 
 // src/core/config.ts
-var DEFAULT_CONFIG2 = {
-  version: 1,
-  rules: []
-};
 function loadConfig(cwd, options) {
   const safeCwd = typeof cwd === "string" ? cwd : process.cwd();
   if (options?.repairLocalRulebooks) {
     repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
   }
-  const userConfigDir = options?.userConfigDir ?? join6(homedir3(), ".cc-safety-net");
-  const userConfigPath = join6(userConfigDir, "config.json");
-  const projectConfigPath = join6(safeCwd, ".safety-net.json");
-  const userConfig = loadSingleConfig(userConfigPath);
-  const projectConfig = loadSingleConfig(projectConfigPath);
-  let rulesPolicyConfig = rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
-  if (rulesPolicyConfig.failClosedReason && (userConfig || projectConfig)) {
-    rulesPolicyConfig = DEFAULT_CONFIG2;
-  }
-  return mergeConfigs(mergeConfigs(userConfig, projectConfig), rulesPolicyConfig);
-}
-function loadSingleConfig(path) {
-  if (!existsSync8(path)) {
-    return null;
-  }
-  try {
-    const content = readFileSync8(path, "utf-8");
-    if (!content.trim()) {
-      return null;
-    }
-    const parsed = JSON.parse(content);
-    const result = validateConfig(parsed);
-    if (result.errors.length > 0) {
-      return null;
-    }
-    const cfg = parsed;
-    return {
-      version: cfg.version,
-      rules: cfg.rules ?? []
-    };
-  } catch {
-    return null;
-  }
-}
-function mergeConfigs(userConfig, projectConfig) {
-  if (userConfig?.failClosedReason || projectConfig?.failClosedReason) {
-    return {
-      version: 1,
-      rules: [],
-      failClosedReason: userConfig?.failClosedReason ?? projectConfig?.failClosedReason
-    };
-  }
-  if (!userConfig && !projectConfig) {
-    return DEFAULT_CONFIG2;
-  }
-  if (!userConfig) {
-    return projectConfig ?? DEFAULT_CONFIG2;
-  }
-  if (!projectConfig) {
-    return userConfig;
-  }
-  const projectRuleNames = new Set(projectConfig.rules.map((r) => r.name.toLowerCase()));
-  const mergedRules = [
-    ...userConfig.rules.filter((r) => !projectRuleNames.has(r.name.toLowerCase())),
-    ...projectConfig.rules
-  ];
-  return {
-    version: 1,
-    rules: mergedRules
-  };
+  return rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
 }
 function validateConfig(config) {
   const errors = [];
@@ -5369,14 +5321,8 @@ function readConfigFileInput(path) {
     return { ok: false, result: { errors, ruleNames } };
   }
 }
-function getUserConfigPath() {
-  return join6(homedir3(), ".cc-safety-net", "config.json");
-}
-function getProjectConfigPath(cwd) {
-  return resolve6(cwd ?? process.cwd(), ".safety-net.json");
-}
 function getLegacyProjectConfigPath(cwd) {
-  return getProjectConfigPath(cwd);
+  return resolve6(cwd ?? process.cwd(), ".safety-net.json");
 }
 function validateRulesConfigFile(path) {
   const loaded = readConfigFileInput(path);
@@ -5485,7 +5431,7 @@ Use information already provided in the user's prompt. Do not ask for scope, act
 
 - Custom rules can only add restrictions; they cannot bypass built-in SafetyNet protections.
 - Config files list rulebook sources. Rule definitions live in \`rulebook.json\`, not directly in \`rule.json\`.
-- Do not use legacy inline \`.safety-net.json\` rules for new configuration.
+- Do not use legacy inline \`.safety-net.json\` or \`~/.cc-safety-net/config.json\` rules. Convert existing legacy files with \`npx -y cc-safety-net rule migrate\`.
 - Rule names must be unique within the rulebook.
 - Every rule command must be listed in \`allowed_commands\`, and every rule must have at least one blocked fixture.
 - Blocked fixtures must specify the expected \`rule\`; include allowed fixtures for close-but-safe commands.

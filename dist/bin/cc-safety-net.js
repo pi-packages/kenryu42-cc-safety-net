@@ -527,12 +527,12 @@ function insertRecentEntry(entries, entry, ts) {
 }
 
 // src/bin/doctor/config.ts
-import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync8 } from "node:fs";
+import { dirname as dirname6 } from "node:path";
 
 // src/core/config.ts
 import { existsSync as existsSync7, readFileSync as readFileSync7 } from "node:fs";
-import { homedir as homedir3 } from "node:os";
-import { join as join5, resolve as resolve3 } from "node:path";
+import { resolve as resolve3 } from "node:path";
 
 // src/types.ts
 var MAX_RECURSION_DEPTH = 10;
@@ -2715,19 +2715,35 @@ function rulesPolicyToConfig(policy) {
 }
 function getLegacyRulesConfigErrors(paths, options) {
   return Array.from(new Set([
-    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath),
-    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath)
+    ...getLegacyRulesConfigError(getLegacyUserRulesConfigPath(options), paths.userConfigPath, "~/.cc-safety-net/config.json"),
+    ...getLegacyRulesConfigError(getLegacyProjectRulesConfigPath(options), paths.projectConfigPath, ".safety-net.json")
   ]));
 }
-function getLegacyRulesConfigError(legacyPath, configPath) {
-  if (existsSync5(configPath) || !existsSync5(legacyPath))
+function getLegacyRulesConfigError(legacyPath, configPath, migratedFrom) {
+  if (!existsSync5(legacyPath))
     return [];
-  try {
-    const parsed = JSON.parse(readFileSync5(legacyPath, "utf-8"));
-    if (parsed.version === 1)
-      return [];
-  } catch {}
+  if (hasMigrationEvidence(configPath, migratedFrom))
+    return [];
   return [`legacy rules config location is no longer used; run ${RULE_MIGRATE_COMMAND}`];
+}
+function hasMigrationEvidence(configPath, migratedFrom) {
+  const config = readRulesConfig(configPath).config;
+  if (!config)
+    return false;
+  return config.rules.some((source) => getRulebookMigratedFrom(dirname4(configPath), source) === migratedFrom);
+}
+function getRulebookMigratedFrom(configDir, source) {
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source))
+    return null;
+  const path = join4(configDir, source, RULEBOOK_FILE);
+  if (!existsSync5(path))
+    return null;
+  try {
+    const rulebook = JSON.parse(readFileSync5(path, "utf-8"));
+    return typeof rulebook.migrated_from === "string" ? rulebook.migrated_from : null;
+  } catch {
+    return null;
+  }
 }
 function getLocalSourceDriftError(spec, content) {
   try {
@@ -2983,75 +2999,12 @@ function restoreConfig(path, content) {
 }
 
 // src/core/config.ts
-var DEFAULT_CONFIG2 = {
-  version: 1,
-  rules: []
-};
 function loadConfig(cwd, options) {
   const safeCwd = typeof cwd === "string" ? cwd : process.cwd();
   if (options?.repairLocalRulebooks) {
     repairLocalRulesPolicy({ cwd: safeCwd, userConfigDir: options.userConfigDir });
   }
-  const userConfigDir = options?.userConfigDir ?? join5(homedir3(), ".cc-safety-net");
-  const userConfigPath = join5(userConfigDir, "config.json");
-  const projectConfigPath = join5(safeCwd, ".safety-net.json");
-  const userConfig = loadSingleConfig(userConfigPath);
-  const projectConfig = loadSingleConfig(projectConfigPath);
-  let rulesPolicyConfig = rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
-  if (rulesPolicyConfig.failClosedReason && (userConfig || projectConfig)) {
-    rulesPolicyConfig = DEFAULT_CONFIG2;
-  }
-  return mergeConfigs(mergeConfigs(userConfig, projectConfig), rulesPolicyConfig);
-}
-function loadSingleConfig(path) {
-  if (!existsSync7(path)) {
-    return null;
-  }
-  try {
-    const content = readFileSync7(path, "utf-8");
-    if (!content.trim()) {
-      return null;
-    }
-    const parsed = JSON.parse(content);
-    const result = validateConfig(parsed);
-    if (result.errors.length > 0) {
-      return null;
-    }
-    const cfg = parsed;
-    return {
-      version: cfg.version,
-      rules: cfg.rules ?? []
-    };
-  } catch {
-    return null;
-  }
-}
-function mergeConfigs(userConfig, projectConfig) {
-  if (userConfig?.failClosedReason || projectConfig?.failClosedReason) {
-    return {
-      version: 1,
-      rules: [],
-      failClosedReason: userConfig?.failClosedReason ?? projectConfig?.failClosedReason
-    };
-  }
-  if (!userConfig && !projectConfig) {
-    return DEFAULT_CONFIG2;
-  }
-  if (!userConfig) {
-    return projectConfig ?? DEFAULT_CONFIG2;
-  }
-  if (!projectConfig) {
-    return userConfig;
-  }
-  const projectRuleNames = new Set(projectConfig.rules.map((r) => r.name.toLowerCase()));
-  const mergedRules = [
-    ...userConfig.rules.filter((r) => !projectRuleNames.has(r.name.toLowerCase())),
-    ...projectConfig.rules
-  ];
-  return {
-    version: 1,
-    rules: mergedRules
-  };
+  return rulesPolicyToConfig(loadRulesPolicy({ cwd: safeCwd, userConfigDir: options?.userConfigDir }));
 }
 function validateConfig(config) {
   const errors = [];
@@ -3156,14 +3109,8 @@ function readConfigFileInput(path) {
     return { ok: false, result: { errors, ruleNames } };
   }
 }
-function getUserConfigPath() {
-  return join5(homedir3(), ".cc-safety-net", "config.json");
-}
-function getProjectConfigPath(cwd) {
-  return resolve3(cwd ?? process.cwd(), ".safety-net.json");
-}
 function getLegacyProjectConfigPath(cwd) {
-  return getProjectConfigPath(cwd);
+  return resolve3(cwd ?? process.cwd(), ".safety-net.json");
 }
 function validateRulesConfigFile(path) {
   const loaded = readConfigFileInput(path);
@@ -3178,93 +3125,47 @@ function validateParsedConfigFile(path, validate) {
     return loaded.result;
   return validate(loaded.parsed);
 }
-
 // src/bin/doctor/config.ts
-function getConfigSourceInfo(path) {
+function getConfigSourceInfo(path, lockPath, userConfigDir) {
   if (!existsSync8(path)) {
     return { path, exists: false, valid: false, ruleCount: 0 };
   }
-  const validation = validateConfigFile(path);
-  if (validation.errors.length > 0) {
-    return {
-      path,
-      exists: true,
-      valid: false,
-      ruleCount: 0,
-      errors: validation.errors
-    };
-  }
+  const validation = validateRulesConfigFile(path);
+  validation.errors.push(...getRulesConfigRuntimeErrorsForConfig(path, lockPath, { userConfigDir }));
   return {
     path,
     exists: true,
-    valid: true,
-    ruleCount: validation.ruleNames.size
+    valid: validation.errors.length === 0,
+    ruleCount: validation.ruleNames.size,
+    ...validation.errors.length > 0 ? { errors: validation.errors } : {}
   };
 }
-function isValidRule(rule) {
-  if (typeof rule !== "object" || rule === null)
-    return false;
-  const r = rule;
-  return typeof r.name === "string" && typeof r.command === "string" && Array.isArray(r.block_args) && typeof r.reason === "string";
-}
-function loadSingleConfigRules(path) {
-  if (!existsSync8(path))
-    return [];
-  try {
-    const content = readFileSync8(path, "utf-8");
-    if (!content.trim())
-      return [];
-    const parsed = JSON.parse(content);
-    if (!Array.isArray(parsed.rules))
-      return [];
-    return parsed.rules.filter(isValidRule);
-  } catch {
-    return [];
-  }
-}
-function mergeRulesWithTracking(userRules, projectRules) {
-  const projectRuleNames = new Set(projectRules.map((r) => r.name.toLowerCase()));
-  const shadowedRules = [];
-  const effectiveRules = [];
-  for (const rule of userRules) {
-    if (projectRuleNames.has(rule.name.toLowerCase())) {
-      shadowedRules.push({ name: rule.name, shadowedBy: "project" });
-    } else {
-      effectiveRules.push({
-        source: "user",
-        name: rule.name,
-        command: rule.command,
-        subcommand: rule.subcommand,
-        blockArgs: rule.block_args,
-        reason: rule.reason
-      });
-    }
-  }
-  for (const rule of projectRules) {
-    effectiveRules.push({
-      source: "project",
-      name: rule.name,
-      command: rule.command,
-      subcommand: rule.subcommand,
-      blockArgs: rule.block_args,
-      reason: rule.reason
-    });
-  }
-  return { effectiveRules, shadowedRules };
+function toEffectiveRule(rule, source) {
+  return {
+    source,
+    name: rule.name,
+    command: rule.command,
+    subcommand: rule.subcommand,
+    blockArgs: rule.block_args,
+    reason: rule.reason
+  };
 }
 function getConfigInfo(cwd, options) {
-  const userPath = options?.userConfigPath ?? getUserConfigPath();
-  const projectPath = options?.projectConfigPath ?? getProjectConfigPath(cwd);
-  const userConfig = getConfigSourceInfo(userPath);
-  const projectConfig = getConfigSourceInfo(projectPath);
-  const userRules = userConfig.valid ? loadSingleConfigRules(userPath) : [];
-  const projectRules = projectConfig.valid ? loadSingleConfigRules(projectPath) : [];
-  const { effectiveRules, shadowedRules } = mergeRulesWithTracking(userRules, projectRules);
+  const userPath = options?.userConfigPath ?? getUserRulesConfigPath();
+  const projectPath = options?.projectConfigPath ?? getProjectRulesConfigPath(cwd);
+  const userConfigDir = dirname6(userPath);
+  const policy = loadRulesPolicy({
+    cwd,
+    userConfigPath: userPath,
+    projectConfigPath: projectPath,
+    userConfigDir
+  });
+  const rulebookSources = new Map(policy.rulebooks.flatMap((rulebook) => rulebook.rules.map((rule) => [rule, rulebook.source])));
   return {
-    userConfig,
-    projectConfig,
-    effectiveRules,
-    shadowedRules
+    userConfig: getConfigSourceInfo(userPath, getUserRulesLockPath({ userConfigPath: userPath }), userConfigDir),
+    projectConfig: getConfigSourceInfo(projectPath, getRulesLockPathForConfigPath(projectPath), userConfigDir),
+    effectiveRules: policy.rules.map((rule) => toEffectiveRule(rule, rulebookSources.get(rule.name) ?? "project")),
+    shadowedRules: []
   };
 }
 
@@ -3768,9 +3669,9 @@ All checks passed.`);
 }
 
 // src/bin/doctor/hooks.ts
-import { existsSync as existsSync11, readdirSync as readdirSync2, readFileSync as readFileSync11 } from "node:fs";
-import { homedir as homedir5, tmpdir as tmpdir3 } from "node:os";
-import { join as join8 } from "node:path";
+import { existsSync as existsSync11, readdirSync as readdirSync2, readFileSync as readFileSync10 } from "node:fs";
+import { homedir as homedir4, tmpdir as tmpdir3 } from "node:os";
+import { join as join7 } from "node:path";
 
 // src/core/analyze/dangerous-text.ts
 function dangerousInText(text) {
@@ -4080,7 +3981,7 @@ function collectCommandTemplate(tokens, start) {
 
 // src/core/analyze/rm.ts
 import { realpathSync as realpathSync3 } from "node:fs";
-import { homedir as homedir4, tmpdir } from "node:os";
+import { homedir as homedir3, tmpdir } from "node:os";
 import { normalize, resolve as resolve4, sep as sep3 } from "node:path";
 var IS_WINDOWS = process.platform === "win32";
 function normalizePathForComparison(p) {
@@ -4239,7 +4140,7 @@ function isTempTarget(path, allowTmpdirVar) {
   return false;
 }
 function getHomeDirForRmPolicy() {
-  return process.env.HOME ?? homedir4();
+  return process.env.HOME ?? homedir3();
 }
 function isCwdHomeForRmPolicy(cwd, homeDir) {
   try {
@@ -4327,12 +4228,12 @@ function extractDashCArg(tokens) {
 
 // src/core/git/config.ts
 import { execFileSync } from "node:child_process";
-import { existsSync as existsSync10, readFileSync as readFileSync10 } from "node:fs";
-import { dirname as dirname7, isAbsolute as isAbsolute5, join as join7, resolve as resolve6 } from "node:path";
+import { existsSync as existsSync10, readFileSync as readFileSync9 } from "node:fs";
+import { dirname as dirname8, isAbsolute as isAbsolute5, join as join6, resolve as resolve6 } from "node:path";
 
 // src/core/git/worktree.ts
-import { existsSync as existsSync9, lstatSync as lstatSync2, readFileSync as readFileSync9, realpathSync as realpathSync4, statSync } from "node:fs";
-import { dirname as dirname6, isAbsolute as isAbsolute4, join as join6, resolve as resolve5 } from "node:path";
+import { existsSync as existsSync9, lstatSync as lstatSync2, readFileSync as readFileSync8, realpathSync as realpathSync4, statSync } from "node:fs";
+import { dirname as dirname7, isAbsolute as isAbsolute4, join as join5, resolve as resolve5 } from "node:path";
 var GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
   "-c",
   "-C",
@@ -4427,7 +4328,7 @@ function isLinkedWorktree(cwd) {
     if (stat.isSymbolicLink() || !stat.isFile()) {
       return false;
     }
-    const content = readFileSync9(dotGitPath, "utf-8");
+    const content = readFileSync8(dotGitPath, "utf-8");
     const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
     if (!firstLine.startsWith("gitdir:")) {
       return false;
@@ -4436,24 +4337,24 @@ function isLinkedWorktree(cwd) {
     if (rawGitDir === "") {
       return false;
     }
-    const gitDir = isAbsolute4(rawGitDir) ? rawGitDir : resolve5(dirname6(dotGitPath), rawGitDir);
-    if (!existsSync9(join6(gitDir, "commondir"))) {
+    const gitDir = isAbsolute4(rawGitDir) ? rawGitDir : resolve5(dirname7(dotGitPath), rawGitDir);
+    if (!existsSync9(join5(gitDir, "commondir"))) {
       return false;
     }
     if (!worktreeGitdirBacklinkMatches(gitDir, dotGitPath)) {
       return false;
     }
-    return worktreeConfigMatchesRoot(gitDir, dirname6(dotGitPath));
+    return worktreeConfigMatchesRoot(gitDir, dirname7(dotGitPath));
   } catch {
     return false;
   }
 }
 function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
-  const backlinkPath = join6(gitDir, "gitdir");
+  const backlinkPath = join5(gitDir, "gitdir");
   if (!existsSync9(backlinkPath)) {
     return false;
   }
-  const rawBacklink = readFileSync9(backlinkPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const rawBacklink = readFileSync8(backlinkPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
   if (rawBacklink === "") {
     return false;
   }
@@ -4465,7 +4366,7 @@ function worktreeGitdirBacklinkMatches(gitDir, dotGitPath) {
   }
 }
 function worktreeConfigMatchesRoot(gitDir, worktreeRoot) {
-  const configWorktreePath = join6(gitDir, "config.worktree");
+  const configWorktreePath = join5(gitDir, "config.worktree");
   if (!existsSync9(configWorktreePath)) {
     return true;
   }
@@ -4502,7 +4403,7 @@ function normalizePathForComparison2(path) {
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 function readCoreWorktree(configPath) {
-  const content = readFileSync9(configPath, "utf-8");
+  const content = readFileSync8(configPath, "utf-8");
   let inCore = false;
   let configuredWorktree = null;
   for (const line of content.split(/\r?\n/)) {
@@ -4592,11 +4493,11 @@ function findDotGit(cwd) {
 function findDotGitInAncestors(cwd) {
   let current = cwd;
   while (true) {
-    const dotGitPath = join6(current, ".git");
+    const dotGitPath = join5(current, ".git");
     if (existsSync9(dotGitPath)) {
       return dotGitPath;
     }
-    const parent = dirname6(current);
+    const parent = dirname7(current);
     if (parent === current) {
       return null;
     }
@@ -4772,11 +4673,11 @@ function getLocalGitConfigPaths(cwd) {
   if (commonDir === null) {
     return null;
   }
-  return [join7(commonDir, "config"), join7(gitDir, "config.worktree")];
+  return [join6(commonDir, "config"), join6(gitDir, "config.worktree")];
 }
 function resolveGitDirFromDotGit(dotGitPath) {
   try {
-    const content = readFileSync10(dotGitPath, "utf-8");
+    const content = readFileSync9(dotGitPath, "utf-8");
     const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
     if (!firstLine.startsWith("gitdir:")) {
       return dotGitPath;
@@ -4785,18 +4686,18 @@ function resolveGitDirFromDotGit(dotGitPath) {
     if (rawGitDir === "") {
       return null;
     }
-    return isAbsolute5(rawGitDir) ? rawGitDir : resolve6(dirname7(dotGitPath), rawGitDir);
+    return isAbsolute5(rawGitDir) ? rawGitDir : resolve6(dirname8(dotGitPath), rawGitDir);
   } catch {
     return null;
   }
 }
 function resolveCommonGitDir(gitDir) {
-  const commonDirPath = join7(gitDir, "commondir");
+  const commonDirPath = join6(gitDir, "commondir");
   if (!existsSync10(commonDirPath)) {
     return gitDir;
   }
   try {
-    const rawCommonDir = readFileSync10(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+    const rawCommonDir = readFileSync9(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
     if (rawCommonDir === "") {
       return null;
     }
@@ -4808,7 +4709,7 @@ function resolveCommonGitDir(gitDir) {
 function gitConfigFileEnablesRecursiveSubmodules(configPath) {
   let content;
   try {
-    content = readFileSync10(configPath, "utf-8");
+    content = readFileSync9(configPath, "utf-8");
   } catch {
     return true;
   }
@@ -6290,7 +6191,7 @@ var SELF_TEST_CASES = [
 ];
 var SELF_TEST_CONFIG = { version: 1, rules: [] };
 function runSelfTest() {
-  const selfTestCwd = join8(tmpdir3(), "cc-safety-net-self-test");
+  const selfTestCwd = join7(tmpdir3(), "cc-safety-net-self-test");
   const results = SELF_TEST_CASES.map((tc) => {
     const result = analyzeCommand(tc.command, {
       cwd: selfTestCwd,
@@ -6448,13 +6349,13 @@ function _escapeRegExp(value) {
 }
 function detectOpenCode(homeDir) {
   const errors = [];
-  const configDir = join8(homeDir, ".config", "opencode");
+  const configDir = join7(homeDir, ".config", "opencode");
   const candidates = ["opencode.json", "opencode.jsonc"];
   for (const filename of candidates) {
-    const configPath = join8(configDir, filename);
+    const configPath = join7(configDir, filename);
     if (existsSync11(configPath)) {
       try {
-        const content = readFileSync11(configPath, "utf-8");
+        const content = readFileSync10(configPath, "utf-8");
         const json = stripJsonComments(content);
         const config = JSON.parse(json);
         const plugins = config.plugin ?? [];
@@ -6534,7 +6435,7 @@ function _parseGeminiEnabledValue(block, scope) {
   return match[1] === "true";
 }
 function _getCodexHome(homeDir) {
-  return process.env.CODEX_HOME || join8(homeDir, ".codex");
+  return process.env.CODEX_HOME || join7(homeDir, ".codex");
 }
 function _parseCodexConfig(content) {
   const result = {};
@@ -6562,7 +6463,7 @@ function _parseCodexConfig(content) {
 }
 function _readCodexConfig(configPath, errors) {
   try {
-    return _parseCodexConfig(readFileSync11(configPath, "utf-8"));
+    return _parseCodexConfig(readFileSync10(configPath, "utf-8"));
   } catch (e) {
     errors.push(`Failed to read ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
     return {};
@@ -6570,7 +6471,7 @@ function _readCodexConfig(configPath, errors) {
 }
 function detectCodex(homeDir) {
   const codexHome = _getCodexHome(homeDir);
-  const pluginCachePath = join8(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
+  const pluginCachePath = join7(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
   const errors = [];
   if (!existsSync11(pluginCachePath)) {
     return { platform: "codex", status: "n/a", configPath: pluginCachePath };
@@ -6587,7 +6488,7 @@ function detectCodex(homeDir) {
       errors: [`Failed to read ${pluginCachePath}: ${e instanceof Error ? e.message : String(e)}`]
     };
   }
-  const configPath = join8(codexHome, "config.toml");
+  const configPath = join7(codexHome, "config.toml");
   const config = _readCodexConfig(configPath, errors);
   if (config.safetyNetEnabled !== true) {
     return {
@@ -6659,7 +6560,7 @@ function _supportsCopilotInlineHooks(version) {
   return comparison >= 0;
 }
 function _getCopilotConfigHome(homeDir) {
-  return process.env.COPILOT_HOME || join8(homeDir, ".copilot");
+  return process.env.COPILOT_HOME || join7(homeDir, ".copilot");
 }
 function _hasSafetyNetCopilotHook(config) {
   const preToolUseHooks = config.hooks?.preToolUse ?? [];
@@ -6671,7 +6572,7 @@ function _hasSafetyNetCopilotHook(config) {
 }
 function _readCopilotConfigFile(configPath, errors) {
   try {
-    return JSON.parse(stripJsonComments(readFileSync11(configPath, "utf-8")));
+    return JSON.parse(stripJsonComments(readFileSync10(configPath, "utf-8")));
   } catch (e) {
     errors?.push(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
     return;
@@ -6690,7 +6591,7 @@ function _collectSafetyNetCopilotHookFiles(dirPath, errors) {
     return [];
   const matches = [];
   for (const filename of _listJsonFiles(dirPath, errors)) {
-    const configPath = join8(dirPath, filename);
+    const configPath = join7(dirPath, filename);
     const config = _readCopilotConfigFile(configPath, errors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       matches.push(configPath);
@@ -6729,15 +6630,15 @@ function _resolveCopilotInlineDisableSource(inlineSources) {
 }
 function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const configHome = _getCopilotConfigHome(homeDir);
-  const repoHookDir = join8(cwd, ".github", "hooks");
-  const userHookDir = join8(configHome, "hooks");
-  const repoConfigDir = join8(cwd, ".github", "copilot");
+  const repoHookDir = join7(cwd, ".github", "hooks");
+  const userHookDir = join7(configHome, "hooks");
+  const repoConfigDir = join7(cwd, ".github", "copilot");
   const inlineSupport = _supportsCopilotInlineHooks(copilotCliVersion);
   const inlineErrors = inlineSupport === true ? errors : undefined;
   const inlineSources = {
-    userConfig: _collectCopilotInlineConfig(join8(configHome, "config.json"), inlineErrors),
-    repoSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.json"), inlineErrors),
-    localSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.local.json"), inlineErrors)
+    userConfig: _collectCopilotInlineConfig(join7(configHome, "config.json"), inlineErrors),
+    repoSettings: _collectCopilotInlineConfig(join7(repoConfigDir, "settings.json"), inlineErrors),
+    localSettings: _collectCopilotInlineConfig(join7(repoConfigDir, "settings.local.json"), inlineErrors)
   };
   if (inlineSupport !== false) {
     const disableSource = _resolveCopilotInlineDisableSource(inlineSources);
@@ -6754,7 +6655,7 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const userHookFiles = existsSync11(userHookDir) ? _listJsonFiles(userHookDir, userHookErrors) : [];
   const userHookPaths = [];
   for (const filename of userHookFiles) {
-    const configPath = join8(userHookDir, filename);
+    const configPath = join7(userHookDir, filename);
     const config = _readCopilotConfigFile(configPath, userHookErrors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       userHookPaths.push(configPath);
@@ -6793,7 +6694,7 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   };
 }
 function detectAllHooks(cwd, options) {
-  const homeDir = options?.homeDir ?? homedir5();
+  const homeDir = options?.homeDir ?? homedir4();
   const detectCopilotCLI = () => {
     const errors = [];
     const hooksCheck = _checkCopilotEnabled(homeDir, cwd, options?.copilotCliVersion, errors);
@@ -7065,18 +6966,18 @@ function printReport(report) {
 import { existsSync as existsSync12 } from "node:fs";
 import { resolve as resolve7 } from "node:path";
 function getConfigSource(options) {
-  const projectPath = getProjectConfigPath(options?.cwd);
+  const projectPath = getProjectRulesConfigPath(options?.cwd);
   let invalidProjectPath = null;
   if (existsSync12(projectPath)) {
-    const validation = validateConfigFile(projectPath);
+    const validation = validateRulesConfigFile(projectPath);
     if (validation.errors.length === 0) {
       return { configSource: projectPath, configValid: true };
     }
     invalidProjectPath = projectPath;
   }
-  const userPath = options?.userConfigPath ?? getUserConfigPath();
+  const userPath = options?.userConfigPath ?? getUserRulesConfigPath(options);
   if (existsSync12(userPath)) {
-    const validation = validateConfigFile(userPath);
+    const validation = validateRulesConfigFile(userPath);
     return { configSource: userPath, configValid: validation.errors.length === 0 };
   }
   if (invalidProjectPath) {
@@ -7505,11 +7406,15 @@ function explainSegment(tokens, depth, options, steps) {
   }
   return null;
 }
+
 // src/bin/explain/analyze.ts
 function explainCommand2(command, options) {
   const trace = { steps: [], segments: [] };
   const analyzeOpts = buildAnalyzeOptions(options);
-  const { configSource, configValid } = getConfigSource({ cwd: options?.cwd });
+  const { configSource, configValid } = getConfigSource({
+    cwd: options?.cwd,
+    userConfigDir: options?.userConfigDir
+  });
   if (!command || !command.trim()) {
     trace.steps.push({ type: "error", message: "No command provided" });
     return {
@@ -8111,7 +8016,6 @@ function printHelp() {
   lines.push("CONFIG FILES:");
   lines.push(`${INDENT}~/.cc-safety-net/rules/rule.json       User-scope rule config`);
   lines.push(`${INDENT}.cc-safety-net/rules/rule.json         Project-scope rule config`);
-  lines.push(`${INDENT}.safety-net.json                      Legacy project config`);
   console.log(lines.join(`
 `));
 }
@@ -8132,8 +8036,8 @@ function showCommandHelp(commandName) {
 
 // src/core/audit.ts
 import { appendFileSync, existsSync as existsSync13, mkdirSync as mkdirSync3 } from "node:fs";
-import { homedir as homedir6 } from "node:os";
-import { join as join9 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { join as join8 } from "node:path";
 function sanitizeSessionIdForFilename(sessionId) {
   const raw = sessionId.trim();
   if (!raw) {
@@ -8151,13 +8055,13 @@ function writeAuditLog(sessionId, command, segment, reason, cwd, options = {}) {
   if (!safeSessionId) {
     return;
   }
-  const home = options.homeDir ?? homedir6();
-  const logsDir = join9(home, ".cc-safety-net", "logs");
+  const home = options.homeDir ?? homedir5();
+  const logsDir = join8(home, ".cc-safety-net", "logs");
   try {
     if (!existsSync13(logsDir)) {
       mkdirSync3(logsDir, { recursive: true });
     }
-    const logFile = join9(logsDir, `${safeSessionId}.jsonl`);
+    const logFile = join8(logsDir, `${safeSessionId}.jsonl`);
     const entry = {
       ts: new Date().toISOString(),
       decision: options.decision ?? "deny",
@@ -8357,9 +8261,9 @@ async function runGeminiCLIHook() {
 }
 
 // src/bin/hook/install.ts
-import { existsSync as existsSync14, mkdirSync as mkdirSync4, readFileSync as readFileSync12, writeFileSync as writeFileSync3 } from "node:fs";
-import { homedir as homedir7 } from "node:os";
-import { dirname as dirname8, join as join10 } from "node:path";
+import { existsSync as existsSync14, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
+import { homedir as homedir6 } from "node:os";
+import { dirname as dirname9, join as join9 } from "node:path";
 var OPENCODE_PLUGIN = "cc-safety-net@latest";
 var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
 var KIMI_HOOK_BLOCK = `[[hooks]]
@@ -8368,18 +8272,18 @@ matcher = "Shell"
 command = "${KIMI_HOOK_COMMAND}"`;
 var KIMI_INLINE_HOOK = `{ event = "PreToolUse", matcher = "Shell", command = "${KIMI_HOOK_COMMAND}" }`;
 function getHomeDir() {
-  return process.env.HOME ?? homedir7();
+  return process.env.HOME ?? homedir6();
 }
 function getOpenCodeConfigDir() {
-  return process.env.OPENCODE_CONFIG_DIR ?? join10(process.env.XDG_CONFIG_HOME ?? join10(getHomeDir(), ".config"), "opencode");
+  return process.env.OPENCODE_CONFIG_DIR ?? join9(process.env.XDG_CONFIG_HOME ?? join9(getHomeDir(), ".config"), "opencode");
 }
 function getOpenCodeConfigPath() {
   const configDir = getOpenCodeConfigDir();
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join10(configDir, file));
-  return candidates.find((path) => existsSync14(path)) ?? join10(configDir, "opencode.jsonc");
+  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join9(configDir, file));
+  return candidates.find((path) => existsSync14(path)) ?? join9(configDir, "opencode.jsonc");
 }
 function getKimiConfigPath() {
-  return join10(process.env.KIMI_SHARE_DIR ?? join10(getHomeDir(), ".kimi"), "config.toml");
+  return join9(process.env.KIMI_SHARE_DIR ?? join9(getHomeDir(), ".kimi"), "config.toml");
 }
 function isWhitespace(char) {
   return char !== undefined && /\s/.test(char);
@@ -8589,7 +8493,7 @@ function isManagedOpenCodePlugin(plugin) {
   return typeof plugin === "string" && (plugin === "cc-safety-net" || plugin.startsWith("cc-safety-net@"));
 }
 function readOpenCodeConfig(configPath) {
-  const content = readFileSync12(configPath, "utf-8");
+  const content = readFileSync11(configPath, "utf-8");
   const config = parseOpenCodeConfig(content, configPath);
   const plugins = config.plugin;
   if (plugins !== undefined && !Array.isArray(plugins)) {
@@ -8599,7 +8503,7 @@ function readOpenCodeConfig(configPath) {
 }
 function installOpenCode() {
   const configPath = getOpenCodeConfigPath();
-  mkdirSync4(dirname8(configPath), { recursive: true });
+  mkdirSync4(dirname9(configPath), { recursive: true });
   if (!existsSync14(configPath)) {
     writeFileSync3(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
 `);
@@ -8732,13 +8636,13 @@ function removeKimiInlineHook(content, hooksRange) {
 }
 function installKimiCli() {
   const configPath = getKimiConfigPath();
-  mkdirSync4(dirname8(configPath), { recursive: true });
+  mkdirSync4(dirname9(configPath), { recursive: true });
   if (!existsSync14(configPath)) {
     writeFileSync3(configPath, `${KIMI_HOOK_BLOCK}
 `);
     return { path: configPath, alreadyInstalled: false };
   }
-  const content = readFileSync12(configPath, "utf-8");
+  const content = readFileSync11(configPath, "utf-8");
   if (content.includes(KIMI_HOOK_COMMAND))
     return { path: configPath, alreadyInstalled: true };
   writeFileSync3(configPath, appendKimiHook(content));
@@ -8748,7 +8652,7 @@ function uninstallKimiCli() {
   const configPath = getKimiConfigPath();
   if (!existsSync14(configPath))
     return { path: configPath, alreadyInstalled: false };
-  const content = readFileSync12(configPath, "utf-8");
+  const content = readFileSync11(configPath, "utf-8");
   if (!content.includes(KIMI_HOOK_COMMAND))
     return { path: configPath, alreadyInstalled: false };
   const inlineHooksRange = findTopLevelInlineHooksArray(content);
@@ -8824,7 +8728,7 @@ async function runKimiCliHook() {
 
 // src/bin/rule/index.ts
 import { existsSync as existsSync17 } from "node:fs";
-import { join as join13 } from "node:path";
+import { join as join12 } from "node:path";
 
 // src/bin/rule/doc.ts
 var RULE_DOC = `# Custom Rules Reference
@@ -8841,7 +8745,7 @@ Agent reference for generating CC Safety Net rulebook configuration.
 
 Use \`cc-safety-net rule init\` to create a starter local config and rulebook. Use \`--global\` for user scope.
 
-Legacy inline \`.safety-net.json\` custom rules are deprecated. Do not create them for new rule configuration.
+Legacy inline \`.safety-net.json\` and \`~/.cc-safety-net/config.json\` files are not loaded at runtime. Convert them with \`cc-safety-net rule migrate\`.
 
 ## rule.json Schema
 
@@ -9057,8 +8961,8 @@ function printResultErrors(result) {
 }
 
 // src/bin/rule/migrate.ts
-import { existsSync as existsSync15, readFileSync as readFileSync13, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname9, join as join11 } from "node:path";
+import { existsSync as existsSync15, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname10, join as join10 } from "node:path";
 var PROJECT_MIGRATED_FROM = ".safety-net.json";
 var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
 async function runRulesMigrate(options) {
@@ -9100,8 +9004,8 @@ async function migrateRulesScope(options) {
     return false;
   }
   const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
-  const rulebookName = getMigratedRulebookName(dirname9(options.configPath), config.rules, options.defaultRulebookName, options.migratedFrom);
-  const rulebookPath = join11(dirname9(options.configPath), rulebookName, "rulebook.json");
+  const rulebookName = getMigratedRulebookName(dirname10(options.configPath), config.rules, options.defaultRulebookName, options.migratedFrom);
+  const rulebookPath = join10(dirname10(options.configPath), rulebookName, "rulebook.json");
   const snapshots = [
     snapshotFile(options.configPath),
     snapshotFile(rulebookPath),
@@ -9141,7 +9045,7 @@ async function writeAndSyncMigratedRulebook(options, rulebookPath, rulebookName,
 }
 function readLegacyRulesConfig(path) {
   try {
-    const parsed = JSON.parse(readFileSync13(path, "utf-8"));
+    const parsed = JSON.parse(readFileSync12(path, "utf-8"));
     const validation = validateConfig(parsed);
     if (validation.errors.length > 0)
       return { ok: false, errors: validation.errors };
@@ -9163,25 +9067,12 @@ function getMigratedRulebookName(configDir, sources, defaultRulebookName, migrat
   const existing = sources.find((source) => getRulebookMigratedFrom(configDir, source) === migratedFrom);
   if (existing)
     return existing;
-  if (!existsSync15(join11(configDir, defaultRulebookName, "rulebook.json")))
+  if (!existsSync15(join10(configDir, defaultRulebookName, "rulebook.json")))
     return defaultRulebookName;
   for (let i = 2;; i++) {
     const name = `${defaultRulebookName}-${i}`;
-    if (!existsSync15(join11(configDir, name, "rulebook.json")))
+    if (!existsSync15(join10(configDir, name, "rulebook.json")))
       return name;
-  }
-}
-function getRulebookMigratedFrom(configDir, source) {
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source))
-    return null;
-  const path = join11(configDir, source, "rulebook.json");
-  if (!existsSync15(path))
-    return null;
-  try {
-    const rulebook = JSON.parse(readFileSync13(path, "utf-8"));
-    return typeof rulebook.migrated_from === "string" ? rulebook.migrated_from : null;
-  } catch {
-    return null;
   }
 }
 function getMigratedRulebook(name, migratedFrom, rules) {
@@ -9206,14 +9097,14 @@ function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom,
   if (!config?.rules.includes(rulebookName) || !existsSync15(rulebookPath))
     return false;
   try {
-    const rulebook = JSON.parse(readFileSync13(rulebookPath, "utf-8"));
+    const rulebook = JSON.parse(readFileSync12(rulebookPath, "utf-8"));
     return rulebook.migrated_from === migratedFrom && JSON.stringify(rulebook.rules) === JSON.stringify(legacyRules);
   } catch {
     return false;
   }
 }
 function snapshotFile(path) {
-  return { path, content: existsSync15(path) ? readFileSync13(path, "utf-8") : null };
+  return { path, content: existsSync15(path) ? readFileSync12(path, "utf-8") : null };
 }
 function restoreFiles(snapshots) {
   for (const snapshot of snapshots) {
@@ -9226,8 +9117,8 @@ function restoreFiles(snapshots) {
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync16, readdirSync as readdirSync3, readFileSync as readFileSync14, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname10, join as join12, resolve as resolve8 } from "node:path";
+import { existsSync as existsSync16, readdirSync as readdirSync3, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname11, join as join11, resolve as resolve8 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9239,7 +9130,7 @@ function runRulesVerify(options = {}) {
   const legacyUserConfig = options.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
   const legacyProjectConfig = options.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
   const githubSourceRulesDir = resolve8(cwd, RULES_DIR);
-  const userConfigDir = dirname10(userConfig);
+  const userConfigDir = dirname11(userConfig);
   let hasErrors = false;
   let hasWarnings = false;
   const configsChecked = [];
@@ -9397,13 +9288,13 @@ function validateGitHubSourceRules(path) {
       errors.push(`${entry.name} must be a rulebook directory`);
       continue;
     }
-    const rulebookPath = join12(path, entry.name, "rulebook.json");
+    const rulebookPath = join11(path, entry.name, "rulebook.json");
     if (!existsSync16(rulebookPath)) {
       errors.push(`${entry.name}/rulebook.json is required`);
       continue;
     }
     try {
-      const rulebook = assertValidRulebook(JSON.parse(readFileSync14(rulebookPath, "utf-8")));
+      const rulebook = assertValidRulebook(JSON.parse(readFileSync13(rulebookPath, "utf-8")));
       if (rulebook.name !== entry.name) {
         errors.push(`rulebook name "${rulebook.name}" must match folder "${entry.name}"`);
         continue;
@@ -9491,7 +9382,7 @@ function printInvalidVerifyTarget(label, path, errors) {
 }
 function addRulesSchemaIfMissing(path) {
   try {
-    const content = readFileSync14(path, "utf-8");
+    const content = readFileSync13(path, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed.$schema)
       return false;
@@ -9534,7 +9425,7 @@ async function runRuleCommand(args) {
     const rulebookName = flags.global ? "user-rules" : "project-rules";
     if (!existsSync17(configPath))
       writeDefaultRulesConfig(configPath, [rulebookName]);
-    const rulebookPath = join13(dir, rulebookName, "rulebook.json");
+    const rulebookPath = join12(dir, rulebookName, "rulebook.json");
     if (!existsSync17(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options);
@@ -9645,9 +9536,9 @@ function parseRuleFlags(args) {
 }
 
 // src/bin/statusline.ts
-import { existsSync as existsSync18, readFileSync as readFileSync15 } from "node:fs";
-import { homedir as homedir8 } from "node:os";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync18, readFileSync as readFileSync14 } from "node:fs";
+import { homedir as homedir7 } from "node:os";
+import { join as join13 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
@@ -9671,7 +9562,7 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join14(homedir8(), ".claude", "settings.json");
+  return join13(homedir7(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
@@ -9679,7 +9570,7 @@ function isPluginEnabled() {
     return false;
   }
   try {
-    const content = readFileSync15(settingsPath, "utf-8");
+    const content = readFileSync14(settingsPath, "utf-8");
     const settings = JSON.parse(content);
     if (!settings.enabledPlugins) {
       return false;

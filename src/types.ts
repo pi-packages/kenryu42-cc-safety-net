@@ -2,7 +2,7 @@
  * Shared types for the safety-net plugin.
  */
 
-/** Custom rule definition from .safety-net.json */
+/** Custom blocking rule definition. */
 export interface CustomRule {
   /** Unique identifier for the rule */
   name: string;
@@ -16,7 +16,7 @@ export interface CustomRule {
   reason: string;
 }
 
-/** Configuration loaded from .safety-net.json */
+/** Runtime configuration used by command analysis. */
 export interface Config {
   /** Schema version (must be 1) */
   version: number;

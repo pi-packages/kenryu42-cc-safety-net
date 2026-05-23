@@ -14,4 +14,5 @@ export declare function getRulesConfigRuntimeErrorsForConfig(configPath: string,
 export declare function getUnknownOverrideErrorsForConfig(configPath: string, lockPath: string, options: RulesPolicyOptions): string[];
 export declare function loadScopePolicy(config: RulesConfig, lockPath: string, configDir: string, options: RulesPolicyOptions, source: 'user' | 'project'): ScopePolicy;
 export declare function rulesPolicyToConfig(policy: LoadedRulesPolicy): Config;
+export declare function getRulebookMigratedFrom(configDir: string, source: string): string | null;
 export {};
