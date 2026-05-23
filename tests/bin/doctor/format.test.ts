@@ -428,13 +428,13 @@ describe('formatConfigSection', () => {
   test('formats config with no rules', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: false,
         valid: false,
         ruleCount: 0,
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: false,
         valid: false,
         ruleCount: 0,
@@ -450,13 +450,13 @@ describe('formatConfigSection', () => {
   test('formats config with shadow warnings', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: true,
         valid: true,
         ruleCount: 1,
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: true,
         valid: true,
         ruleCount: 1,
@@ -479,14 +479,14 @@ describe('formatConfigSection', () => {
   test('formats config with invalid config showing errors', () => {
     const report = createDoctorReport({
       userConfig: {
-        path: '/home/user/.cc-safety-net/config.json',
+        path: '/home/user/.cc-safety-net/rules/rule.json',
         exists: true,
         valid: false,
         ruleCount: 0,
         errors: ['Invalid version: expected 1, got 99'],
       },
       projectConfig: {
-        path: './.safety-net.json',
+        path: './.cc-safety-net/rules/rule.json',
         exists: true,
         valid: false,
         ruleCount: 0,
