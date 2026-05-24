@@ -4594,7 +4594,7 @@ function parseLockEntry(entry, prefix) {
   };
 }
 function validateRequiredString(candidate, prefix, field) {
-  return typeof candidate[field] === "string" && candidate[field] !== "" ? [] : [`${prefix}.${field}: required string`];
+  return typeof candidate[field] === "string" && candidate[field].trim() !== "" ? [] : [`${prefix}.${field}: required string`];
 }
 function validateDigest(candidate, prefix) {
   return typeof candidate.digest === "string" && SHA256_DIGEST_PATTERN.test(candidate.digest) ? [] : [`${prefix}.digest: required sha256 digest`];

@@ -99,7 +99,7 @@ function validateRequiredString(
   prefix: string,
   field: string,
 ): string[] {
-  return typeof candidate[field] === 'string' && candidate[field] !== ''
+  return typeof candidate[field] === 'string' && candidate[field].trim() !== ''
     ? []
     : [`${prefix}.${field}: required string`];
 }

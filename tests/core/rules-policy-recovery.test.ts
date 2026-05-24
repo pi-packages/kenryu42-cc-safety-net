@@ -146,6 +146,20 @@ describe('rules policy recovery coverage', () => {
       expect(readLockfile(lockPath).errors).toContain(
         `${lockPath}: rulebooks[0].kind: unknown kind "bad"`,
       );
+      writeFileSync(
+        lockPath,
+        JSON.stringify({
+          version: 1,
+          rulebooks: [{ ...githubEntry, spec: ' ', name: ' ', path: ' ' }],
+        }),
+      );
+      expect(readLockfile(lockPath).errors).toEqual(
+        expect.arrayContaining([
+          `${lockPath}: rulebooks[0].spec: required string`,
+          `${lockPath}: rulebooks[0].name: required string`,
+          `${lockPath}: rulebooks[0].path: required string`,
+        ]),
+      );
       writeFileSync(lockPath, JSON.stringify({ version: 1, rulebooks: [githubEntry] }));
       expect(readLockfile(lockPath).lock?.rulebooks[0]).toEqual(githubEntry);
       expect(getRulebookDisplaySource(githubEntry)).toBe('owner/repo#feature/project-rules');
