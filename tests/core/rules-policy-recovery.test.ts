@@ -20,6 +20,7 @@ import {
   getRulebookDisplaySource,
   getRulesConfigRuntimeErrorsForConfig,
   getRulesConfigSourceDisplayMap,
+  getRulesLockPathForConfigPath,
   getUnknownOverrideErrorsForConfig,
   getUserRulesConfigPath,
   getUserRulesDir,
@@ -402,6 +403,37 @@ describe('rules policy recovery coverage', () => {
     }
   });
 
+  test('syncs nonstandard user and project config filenames', async () => {
+    const tempDir = makeTempDir('rules-policy-custom-config-paths');
+    const userConfigPath = join(tempDir, 'user-rules.custom.json');
+    const projectConfigPath = join(tempDir, 'project-rules.custom.json');
+
+    try {
+      writeRulebook(join(dirname(userConfigPath), 'user-rules', 'rulebook.json'), 'user-rules');
+      writeDefaultRulesConfig(userConfigPath, ['user-rules']);
+      writeRulebook(join(dirname(projectConfigPath), 'project-rules', 'rulebook.json'));
+      writeDefaultRulesConfig(projectConfigPath, ['project-rules']);
+
+      const userSynced = await syncRulesConfig({ global: true, cwd: tempDir, userConfigPath });
+      const projectSynced = await syncRulesConfig({ cwd: tempDir, projectConfigPath });
+
+      expect(userSynced.ok).toBe(true);
+      expect(userSynced.entries.map((entry) => entry.name)).toEqual(['user-rules']);
+      expect(projectSynced.ok).toBe(true);
+      expect(projectSynced.entries.map((entry) => entry.name)).toEqual(['project-rules']);
+      expect(
+        readLockfile(getRulesLockPathForConfigPath(userConfigPath)).lock?.rulebooks,
+      ).toHaveLength(1);
+      expect(
+        readLockfile(getRulesLockPathForConfigPath(projectConfigPath)).lock?.rulebooks,
+      ).toHaveLength(1);
+      expect(existsSync(getUserRulesConfigPath({ userConfigPath }))).toBe(false);
+      expect(existsSync(getProjectRulesConfigPath(tempDir))).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('removes clean local rulebook source directory when requested', async () => {
     const tempDir = makeTempDir('rules-policy-remove-delete-source');
 
@@ -482,6 +514,32 @@ describe('rules policy recovery coverage', () => {
         'owner/repo#main/alpha',
       ]);
     } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('restores config and lock when delete-source fails after preflight', async () => {
+    const tempDir = makeTempDir('rules-policy-remove-delete-source-failure');
+    const sourceDir = join(getProjectRulesDir(tempDir), 'project-rules');
+
+    try {
+      writeProjectRulebookConfig(tempDir);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+      chmodSync(sourceDir, 0o555);
+
+      const result = await removeRulebookSource('project-rules', {
+        cwd: tempDir,
+        deleteSource: true,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.errors[0]).toContain('Failed to delete local rulebook source');
+      expect(readRulesConfig(getProjectRulesConfigPath(tempDir)).config?.rules).toEqual([
+        'project-rules',
+      ]);
+      expect(readLockfile(getProjectRulesLockPath(tempDir)).lock?.rulebooks).toHaveLength(1);
+    } finally {
+      if (existsSync(sourceDir)) chmodSync(sourceDir, 0o755);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
