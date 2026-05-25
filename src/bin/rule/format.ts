@@ -8,12 +8,14 @@ import {
 export function printSyncResult(result: {
   ok: boolean;
   errors: string[];
+  warnings?: string[];
   entries: RulebookLockEntryWithStats[];
 }): void {
   if (!result.ok) {
     printResultErrors(result);
     return;
   }
+  printResultWarnings(result);
   for (const entry of result.entries) {
     const ruleCount = entry.ruleCount === undefined ? '' : ` (${entry.ruleCount} rules)`;
     console.log(`${entry.name} ${entry.version} ${entry.digest} ${entry.spec}${ruleCount}`);
@@ -24,6 +26,7 @@ export function printRuleChangeResult(
   result: {
     ok: boolean;
     errors: string[];
+    warnings?: string[];
     entries: RulebookLockEntryWithStats[];
   },
   action: string,
@@ -32,6 +35,7 @@ export function printRuleChangeResult(
     printResultErrors(result);
     return;
   }
+  printResultWarnings(result);
   console.log(action);
   console.log('Rule config synced.');
   console.log('');
@@ -65,6 +69,7 @@ export function printRulesTestResult(
   result: {
     ok: boolean;
     errors: string[];
+    warnings?: string[];
     entries: RulebookLockEntryWithStats[];
   },
   sourceDisplayMap: Map<string, string> = new Map(),
@@ -73,6 +78,7 @@ export function printRulesTestResult(
     printResultErrors(result);
     return;
   }
+  printResultWarnings(result);
   console.log('Rulebook tests passed.');
   console.log('');
   for (const entry of result.entries) {
@@ -153,6 +159,11 @@ function sumStats(entries: RulebookLockEntryWithStats[], key: 'ruleCount' | 'tes
 
 function printResultErrors(result: { errors: string[] }): void {
   for (const error of result.errors) console.error(error);
+}
+
+function printResultWarnings(result: { warnings?: string[] }): void {
+  if (!result.warnings || result.warnings.length === 0) return;
+  for (const warning of result.warnings) console.warn(warning);
 }
 
 export function relativeDisplay(cwd: string, path: string): string {

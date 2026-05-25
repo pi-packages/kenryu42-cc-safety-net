@@ -44,7 +44,7 @@ export async function syncRulesConfig(
   try {
     const existingLockResult = readLockfile(scope.lockPath);
     if (options.only && existingLockResult.errors.length > 0) {
-      return { ok: false, errors: existingLockResult.errors, entries: [] };
+      return { ok: false, errors: existingLockResult.errors, warnings: [], entries: [] };
     }
     const previousLock = existingLockResult.errors.length > 0 ? null : existingLockResult.lock;
     const selectedSpecs = options.only
@@ -57,6 +57,7 @@ export async function syncRulesConfig(
       return {
         ok: false,
         errors: [`No lockfile available for partial update; run ${RULE_SYNC_COMMAND}`],
+        warnings: [],
         entries: [],
       };
     }
@@ -80,14 +81,11 @@ export async function syncRulesConfig(
     return {
       ok: true,
       errors: [],
+      warnings: [],
       entries: entries.map((entry) => addRuleCount(entry, ruleCountsBySpec)),
     };
   } catch (error) {
-    return {
-      ok: false,
-      errors: [error instanceof Error ? error.message : String(error)],
-      entries: [],
-    };
+    return failWithError(error);
   }
 }
 
@@ -117,17 +115,14 @@ export async function testRulebookSources(
     return {
       ok: fixtureErrors.length === 0,
       errors: fixtureErrors,
+      warnings: [],
       entries: resolved.map((item) => ({
         ...addRuleCount(item.entry, ruleCountsBySpec),
         testCount: testCountsBySpec.get(item.entry.spec),
       })),
     };
   } catch (error) {
-    return {
-      ok: false,
-      errors: [error instanceof Error ? error.message : String(error)],
-      entries: [],
-    };
+    return failWithError(error);
   }
 }
 
@@ -150,6 +145,7 @@ export async function addRulebookSource(
     return {
       ok: false,
       errors: [error instanceof Error ? error.message : String(error)],
+      warnings: [],
       entries: [],
     };
   }
@@ -183,14 +179,19 @@ export async function removeRulebookSource(
   const scope = getScopePaths(options);
   const loaded = readRulesConfig(scope.configPath);
   if (loaded.errors.length > 0) {
-    return { ok: false, errors: loaded.errors, entries: [] };
+    return { ok: false, errors: loaded.errors, warnings: [], entries: [] };
   }
   if (!loaded.config) {
-    return { ok: false, errors: [`No config found at ${scope.configPath}`], entries: [] };
+    return {
+      ok: false,
+      errors: [`No config found at ${scope.configPath}`],
+      warnings: [],
+      entries: [],
+    };
   }
   const lockResult = readLockfile(scope.lockPath);
   if (lockResult.errors.length > 0) {
-    return { ok: false, errors: lockResult.errors, entries: [] };
+    return { ok: false, errors: lockResult.errors, warnings: [], entries: [] };
   }
   const matches = getRemoveMatches(loaded.config.rules, lockResult.lock, match);
   if (!matches.ok) return matches.result;
@@ -219,7 +220,12 @@ async function checkRulesConfig(
   options: RulesPolicyOptions,
 ): Promise<SyncRulesConfigResult> {
   const result = loadScopePolicy(config, lockPath, configDir, options, 'project');
-  return { ok: result.errors.length === 0, errors: result.errors, entries: result.entries };
+  return {
+    ok: result.errors.length === 0,
+    errors: result.errors,
+    warnings: [],
+    entries: result.entries,
+  };
 }
 
 function repairLocalRulesScope(options: SyncRulesConfigOptions): void {
@@ -305,4 +311,13 @@ function restoreConfig(path: string, content: string | null): void {
     return;
   }
   writeFileSync(path, content, 'utf-8');
+}
+
+function failWithError(error: unknown): SyncRulesConfigResult {
+  return {
+    ok: false,
+    errors: [error instanceof Error ? error.message : String(error)],
+    warnings: [],
+    entries: [],
+  };
 }

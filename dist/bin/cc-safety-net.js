@@ -714,6 +714,7 @@ function getSelectedUpdateSpecs(config, lock, match) {
         errors: [
           `No lockfile available to match rulebook name ${match}; use the exact source or run ${RULE_SYNC_COMMAND}`
         ],
+        warnings: [],
         entries: []
       }
     };
@@ -749,6 +750,7 @@ function noRulebookMatch(match, nameMatches) {
     result: {
       ok: false,
       errors: nameMatches.length === 0 ? [`No configured rulebook matches ${match}`] : [`Ambiguous rulebook match ${match}: ${nameMatches.join(", ")}`],
+      warnings: [],
       entries: []
     }
   };
@@ -784,6 +786,7 @@ function getGitHubRepositoryMatches(rules, match) {
         `Multiple refs are configured for ${match}. Use an explicit ref:`,
         `  cc-safety-net rule remove ${match}#<ref>`
       ],
+      warnings: [],
       entries: []
     }
   };
@@ -893,7 +896,7 @@ function readRulesConfig(path) {
 function readScopeRulesConfig(path) {
   const loaded = readRulesConfig(path);
   if (loaded.errors.length > 0) {
-    return { ok: false, result: { ok: false, errors: loaded.errors, entries: [] } };
+    return { ok: false, result: { ok: false, errors: loaded.errors, warnings: [], entries: [] } };
   }
   return { ok: true, config: loaded.config ?? DEFAULT_CONFIG };
 }
@@ -2810,7 +2813,7 @@ async function syncRulesConfig(options = {}) {
   try {
     const existingLockResult = readLockfile(scope.lockPath);
     if (options.only && existingLockResult.errors.length > 0) {
-      return { ok: false, errors: existingLockResult.errors, entries: [] };
+      return { ok: false, errors: existingLockResult.errors, warnings: [], entries: [] };
     }
     const previousLock = existingLockResult.errors.length > 0 ? null : existingLockResult.lock;
     const selectedSpecs = options.only ? getSelectedUpdateSpecs(config, previousLock, options.only) : { ok: true, specs: config.rules };
@@ -2821,6 +2824,7 @@ async function syncRulesConfig(options = {}) {
       return {
         ok: false,
         errors: [`No lockfile available for partial update; run ${RULE_SYNC_COMMAND}`],
+        warnings: [],
         entries: []
       };
     }
@@ -2834,14 +2838,11 @@ async function syncRulesConfig(options = {}) {
     return {
       ok: true,
       errors: [],
+      warnings: [],
       entries: entries.map((entry) => addRuleCount(entry, ruleCountsBySpec))
     };
   } catch (error) {
-    return {
-      ok: false,
-      errors: [error instanceof Error ? error.message : String(error)],
-      entries: []
-    };
+    return failWithError(error);
   }
 }
 async function testRulebookSources(sources, options = {}) {
@@ -2858,17 +2859,14 @@ async function testRulebookSources(sources, options = {}) {
     return {
       ok: fixtureErrors.length === 0,
       errors: fixtureErrors,
+      warnings: [],
       entries: resolved.map((item) => ({
         ...addRuleCount(item.entry, ruleCountsBySpec),
         testCount: testCountsBySpec.get(item.entry.spec)
       }))
     };
   } catch (error) {
-    return {
-      ok: false,
-      errors: [error instanceof Error ? error.message : String(error)],
-      entries: []
-    };
+    return failWithError(error);
   }
 }
 async function addRulebookSource(source, options = {}) {
@@ -2886,6 +2884,7 @@ async function addRulebookSource(source, options = {}) {
     return {
       ok: false,
       errors: [error instanceof Error ? error.message : String(error)],
+      warnings: [],
       entries: []
     };
   }
@@ -2911,14 +2910,19 @@ async function removeRulebookSource(match, options = {}) {
   const scope = getScopePaths(options);
   const loaded = readRulesConfig(scope.configPath);
   if (loaded.errors.length > 0) {
-    return { ok: false, errors: loaded.errors, entries: [] };
+    return { ok: false, errors: loaded.errors, warnings: [], entries: [] };
   }
   if (!loaded.config) {
-    return { ok: false, errors: [`No config found at ${scope.configPath}`], entries: [] };
+    return {
+      ok: false,
+      errors: [`No config found at ${scope.configPath}`],
+      warnings: [],
+      entries: []
+    };
   }
   const lockResult = readLockfile(scope.lockPath);
   if (lockResult.errors.length > 0) {
-    return { ok: false, errors: lockResult.errors, entries: [] };
+    return { ok: false, errors: lockResult.errors, warnings: [], entries: [] };
   }
   const matches = getRemoveMatches(loaded.config.rules, lockResult.lock, match);
   if (!matches.ok)
@@ -2941,7 +2945,12 @@ function repairLocalRulesPolicy(options = {}) {
 }
 async function checkRulesConfig(config, configDir, lockPath, options) {
   const result = loadScopePolicy(config, lockPath, configDir, options, "project");
-  return { ok: result.errors.length === 0, errors: result.errors, entries: result.entries };
+  return {
+    ok: result.errors.length === 0,
+    errors: result.errors,
+    warnings: [],
+    entries: result.entries
+  };
 }
 function repairLocalRulesScope(options) {
   const scope = getScopePaths(options);
@@ -2996,6 +3005,14 @@ function restoreConfig(path, content) {
     return;
   }
   writeFileSync2(path, content, "utf-8");
+}
+function failWithError(error) {
+  return {
+    ok: false,
+    errors: [error instanceof Error ? error.message : String(error)],
+    warnings: [],
+    entries: []
+  };
 }
 
 // src/core/config.ts
@@ -8877,6 +8894,7 @@ function printRuleChangeResult(result, action) {
     printResultErrors(result);
     return;
   }
+  printResultWarnings(result);
   console.log(action);
   console.log("Rule config synced.");
   console.log("");
@@ -8904,6 +8922,7 @@ function printRulesTestResult(result, sourceDisplayMap = new Map) {
     printResultErrors(result);
     return;
   }
+  printResultWarnings(result);
   console.log("Rulebook tests passed.");
   console.log("");
   for (const entry of result.entries) {
@@ -8969,6 +8988,12 @@ function sumStats(entries, key) {
 function printResultErrors(result) {
   for (const error of result.errors)
     console.error(error);
+}
+function printResultWarnings(result) {
+  if (!result.warnings || result.warnings.length === 0)
+    return;
+  for (const warning of result.warnings)
+    console.warn(warning);
 }
 
 // src/bin/rule/migrate.ts

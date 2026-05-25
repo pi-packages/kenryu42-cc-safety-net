@@ -108,7 +108,7 @@ export function readScopeRulesConfig(
 ): { ok: true; config: RulesConfig } | { ok: false; result: SyncRulesConfigResult } {
   const loaded = readRulesConfig(path);
   if (loaded.errors.length > 0) {
-    return { ok: false, result: { ok: false, errors: loaded.errors, entries: [] } };
+    return { ok: false, result: { ok: false, errors: loaded.errors, warnings: [], entries: [] } };
   }
   return { ok: true, config: loaded.config ?? DEFAULT_CONFIG };
 }

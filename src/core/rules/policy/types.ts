@@ -61,6 +61,7 @@ export interface SyncRulesConfigOptions extends RulesPolicyOptions {
 export interface SyncRulesConfigResult {
   ok: boolean;
   errors: string[];
+  warnings: string[];
   entries: RulebookLockEntryWithStats[];
 }
 
