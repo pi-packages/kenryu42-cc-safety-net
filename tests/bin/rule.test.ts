@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RULE_DOC } from '@/bin/rule/doc';
 import { runSafetyNetCli, withTempDir } from '../helpers';
@@ -70,10 +70,7 @@ describe('rule command docs', () => {
 
   test('reinitializes global rules after removing the default source', async () => {
     await withTempDir('safety-net-rule-init-global-removed-', async (tempDir) => {
-      const env = {
-        CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
-        HOME: join(tempDir, 'home'),
-      };
+      const env = globalRuleEnv(tempDir);
 
       expect((await runSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
       expect(
@@ -198,11 +195,7 @@ describe('rule list', () => {
 
   test('prints policy issues and exits nonzero', async () => {
     await withTempDir('safety-net-rule-list-issues-', async (tempDir) => {
-      mkdirSync(join(tempDir, '.cc-safety-net', 'rules'), { recursive: true });
-      writeFileSync(
-        join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
-        JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
-      );
+      writeProjectRulesConfig(tempDir, ['project-rules']);
 
       const result = await runRuleList(tempDir);
 
@@ -236,11 +229,152 @@ describe('rule list', () => {
   });
 });
 
+describe('rule remove', () => {
+  test('removes local project source without deleting editable rulebook by default', async () => {
+    await withInitializedProjectRules(
+      'safety-net-rule-remove-keep-source-',
+      async (tempDir, env) => {
+        const result = await runSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir);
+
+        expectSuccessfulCli(result);
+        expectProjectRulesConfigRules(tempDir, []);
+        expect(
+          existsSync(join(tempDir, '.cc-safety-net', 'rules', 'project-rules', 'rulebook.json')),
+        ).toBe(true);
+      },
+    );
+  });
+
+  test('deletes clean local project source with delete-source', async () => {
+    await withInitializedProjectRules(
+      'safety-net-rule-remove-delete-source-',
+      async (tempDir, env) => {
+        const result = await runSafetyNetCli(
+          ['rule', 'remove', 'project-rules', '--delete-source'],
+          env,
+          tempDir,
+        );
+
+        expectSuccessfulCli(result);
+        expectProjectRulesConfigRules(tempDir, []);
+        expect(existsSync(join(tempDir, '.cc-safety-net', 'rules', 'project-rules'))).toBe(false);
+        expect(readdirSync(join(tempDir, '.cc-safety-net', 'cache', 'rulebooks'))).toEqual([]);
+      },
+    );
+  });
+
+  test('fails before changing config when delete-source local directory has extra files', async () => {
+    await withInitializedProjectRules(
+      'safety-net-rule-remove-dirty-source-',
+      async (tempDir, env) => {
+        writeFileSync(
+          join(tempDir, '.cc-safety-net', 'rules', 'project-rules', 'notes.txt'),
+          'keep me',
+        );
+
+        const result = await runSafetyNetCli(
+          ['rule', 'remove', 'project-rules', '--delete-source'],
+          env,
+          tempDir,
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('delete manually');
+        expectProjectRulesConfigRules(tempDir, ['project-rules']);
+        expect(existsSync(join(tempDir, '.cc-safety-net', 'rules', 'project-rules'))).toBe(true);
+      },
+    );
+  });
+
+  test('rejects delete-source for GitHub sources before changing config', async () => {
+    await withTempDir('safety-net-rule-remove-github-source-', async (tempDir) => {
+      writeProjectRulesConfig(tempDir, ['owner/repo#abc123/project-rules']);
+
+      const result = await runSafetyNetCli(
+        ['rule', 'remove', 'owner/repo#abc123/project-rules', '--delete-source'],
+        { HOME: join(tempDir, 'home') },
+        tempDir,
+      );
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('--delete-source can only delete local rulebook sources');
+      expectProjectRulesConfigRules(tempDir, ['owner/repo#abc123/project-rules']);
+    });
+  });
+
+  test('deletes clean global local source with delete-source', async () => {
+    await withInitializedGlobalRules(
+      'safety-net-rule-remove-global-delete-source-',
+      async (tempDir, env) => {
+        const result = await runSafetyNetCli(
+          ['rule', 'remove', '--global', 'user-rules', '--delete-source'],
+          env,
+        );
+
+        expectSuccessfulCli(result);
+        expect(
+          readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json')).rules,
+        ).toEqual([]);
+        expect(existsSync(join(tempDir, '.cc-safety-net', 'rules', 'user-rules'))).toBe(false);
+      },
+    );
+  });
+
+  test('rejects delete-source on non-remove subcommands', async () => {
+    const result = await runSafetyNetCli(['rule', 'add', 'project-rules', '--delete-source']);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.output).toBe('');
+    expect(result.stderr).toContain('Unknown option for rule add: --delete-source');
+  });
+});
+
 function ruleListEnv(tempDir: string): Record<string, string> {
   return {
     CC_SAFETY_NET_HOME: join(tempDir, 'home', '.cc-safety-net'),
     HOME: join(tempDir, 'home'),
   };
+}
+
+function projectRuleEnv(tempDir: string): Record<string, string> {
+  return { HOME: join(tempDir, 'home') };
+}
+
+function globalRuleEnv(tempDir: string): Record<string, string> {
+  return {
+    CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
+    HOME: join(tempDir, 'home'),
+  };
+}
+
+async function withInitializedProjectRules(
+  prefix: string,
+  fn: (tempDir: string, env: Record<string, string>) => Promise<void>,
+) {
+  await withTempDir(prefix, async (tempDir) => {
+    const env = projectRuleEnv(tempDir);
+    expect((await runSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
+    await fn(tempDir, env);
+  });
+}
+
+async function withInitializedGlobalRules(
+  prefix: string,
+  fn: (tempDir: string, env: Record<string, string>) => Promise<void>,
+) {
+  await withTempDir(prefix, async (tempDir) => {
+    const env = globalRuleEnv(tempDir);
+    expect((await runSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
+    await fn(tempDir, env);
+  });
+}
+
+function writeProjectRulesConfig(tempDir: string, rules: string[]): void {
+  mkdirSync(join(tempDir, '.cc-safety-net', 'rules'), { recursive: true });
+  writeFileSync(
+    join(tempDir, '.cc-safety-net', 'rules', 'rule.json'),
+    JSON.stringify({ version: 1, rules, overrides: {} }),
+  );
 }
 
 function runRuleList(tempDir: string, env = ruleListEnv(tempDir)) {
