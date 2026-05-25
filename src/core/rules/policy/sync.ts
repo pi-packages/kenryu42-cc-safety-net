@@ -228,6 +228,16 @@ export async function removeRulebookSource(
   }
   const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
   if (!deleteResult.ok) {
+    restoreConfig(scope.configPath, before);
+    const rollback = await syncRulesConfig(options);
+    if (!rollback.ok) {
+      return {
+        ok: false,
+        errors: [...deleteResult.result.errors, ...rollback.errors],
+        warnings: rollback.warnings,
+        entries: rollback.entries,
+      };
+    }
     return deleteResult.result;
   }
   return result;
