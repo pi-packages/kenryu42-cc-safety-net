@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { runRulebookFixtures } from '@/core/rules/rulebook';
 import { readRulesConfig, readScopeRulesConfig, writeJsonAtomic } from './config-file';
 import { readLockfile } from './lockfile';
@@ -78,10 +78,11 @@ export async function syncRulesConfig(
     const ruleCountsBySpec = new Map(
       resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]),
     );
+    const warnings = pruneUnreferencedRulebookCaches(entries, scope.configDir, options);
     return {
       ok: true,
       errors: [],
-      warnings: [],
+      warnings,
       entries: entries.map((entry) => addRuleCount(entry, ruleCountsBySpec)),
     };
   } catch (error) {
@@ -303,6 +304,36 @@ function writeCache(
   const path = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content, 'utf-8');
+}
+
+function pruneUnreferencedRulebookCaches(
+  entries: RulebookLockEntry[],
+  configDir: string,
+  options: RulesPolicyOptions,
+): string[] {
+  const cacheRoot = join(dirname(configDir), 'cache', 'rulebooks');
+  if (!existsSync(cacheRoot)) return [];
+
+  const keep = new Set(
+    entries.map((entry) =>
+      dirname(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir })),
+    ),
+  );
+
+  return readdirSync(cacheRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .flatMap((entry) => {
+      const path = join(cacheRoot, entry.name);
+      if (keep.has(path)) return [];
+      try {
+        rmSync(path, { recursive: true, force: true });
+        return [];
+      } catch (error) {
+        return [
+          `Failed to prune rulebook cache entry ${path}: ${error instanceof Error ? error.message : String(error)}`,
+        ];
+      }
+    });
 }
 
 function restoreConfig(path: string, content: string | null): void {

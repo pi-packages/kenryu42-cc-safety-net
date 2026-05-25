@@ -5017,8 +5017,8 @@ function withTerminalPeriod(message) {
 }
 
 // src/core/rules/policy/sync.ts
-import { existsSync as existsSync7, mkdirSync as mkdirSync2, readFileSync as readFileSync7, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { dirname as dirname7 } from "node:path";
+import { existsSync as existsSync7, mkdirSync as mkdirSync2, readdirSync, readFileSync as readFileSync7, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { dirname as dirname7, join as join6 } from "node:path";
 async function syncRulesConfig(options = {}) {
   const internalOptions = options;
   const scope = getScopePaths(options);
@@ -5054,10 +5054,11 @@ async function syncRulesConfig(options = {}) {
     const entries = options.only ? mergeSelectedLockEntries(config, previousLock, resolved) : resolved.map((item) => item.entry);
     writeJsonAtomic(scope.lockPath, { version: 1, rulebooks: entries });
     const ruleCountsBySpec = new Map(resolved.map((item) => [item.entry.spec, item.rulebook.rules.length]));
+    const warnings = pruneUnreferencedRulebookCaches(entries, scope.configDir, options);
     return {
       ok: true,
       errors: [],
-      warnings: [],
+      warnings,
       entries: entries.map((entry) => addRuleCount(entry, ruleCountsBySpec))
     };
   } catch (error) {
@@ -5217,6 +5218,25 @@ function writeCache(content, entry, configDir, options) {
   const path = getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir });
   mkdirSync2(dirname7(path), { recursive: true });
   writeFileSync2(path, content, "utf-8");
+}
+function pruneUnreferencedRulebookCaches(entries, configDir, options) {
+  const cacheRoot = join6(dirname7(configDir), "cache", "rulebooks");
+  if (!existsSync7(cacheRoot))
+    return [];
+  const keep = new Set(entries.map((entry) => dirname7(getRulebookCachePath(entry, { ...options, cacheConfigDir: configDir }))));
+  return readdirSync(cacheRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).flatMap((entry) => {
+    const path = join6(cacheRoot, entry.name);
+    if (keep.has(path))
+      return [];
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return [];
+    } catch (error) {
+      return [
+        `Failed to prune rulebook cache entry ${path}: ${error instanceof Error ? error.message : String(error)}`
+      ];
+    }
+  });
 }
 function restoreConfig(path, content) {
   if (content === null) {

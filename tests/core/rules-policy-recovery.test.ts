@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -78,6 +86,41 @@ function writeProjectRulebook(tempDir: string, name = 'project-rules') {
   mkdirSync(dirname(path), { recursive: true });
   writeRulebook(path, name);
   return path;
+}
+
+function mockGitHubRepoRulebooksFetch(
+  rulebooks: Record<string, string>,
+  extraTreeEntries: Array<{ path: string; type: 'blob' }> = [],
+): typeof fetch {
+  const rawPrefix = 'https://raw.githubusercontent.com/owner/repo/abc123/.cc-safety-net/rules/';
+  return (async (input: Parameters<typeof fetch>[0]) => {
+    const url = String(input);
+    switch (url) {
+      case 'https://api.github.com/repos/owner/repo':
+        return new Response(JSON.stringify({ default_branch: 'main' }));
+      case 'https://api.github.com/repos/owner/repo/commits/main':
+      case 'https://api.github.com/repos/owner/repo/commits/abc123':
+        return new Response(JSON.stringify({ sha: 'abc123' }));
+    }
+    if (url === 'https://api.github.com/repos/owner/repo/git/trees/abc123?recursive=1') {
+      return new Response(
+        JSON.stringify({
+          tree: [
+            ...extraTreeEntries,
+            ...Object.keys(rulebooks).map((name) => ({
+              path: `.cc-safety-net/rules/${name}/rulebook.json`,
+              type: 'blob',
+            })),
+          ],
+        }),
+      );
+    }
+    if (url.startsWith(rawPrefix) && url.endsWith('/rulebook.json')) {
+      const name = url.slice(rawPrefix.length).split('/')[0];
+      if (name && rulebooks[name]) return new Response(rulebooks[name]);
+    }
+    return new Response('', { status: 404 });
+  }) as unknown as typeof fetch;
 }
 
 describe('rules policy recovery coverage', () => {
@@ -444,33 +487,9 @@ describe('rules policy recovery coverage', () => {
     const alphaRulebook = rulebookJson('alpha');
 
     try {
-      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
-        const url = String(input);
-        switch (url) {
-          case 'https://api.github.com/repos/owner/repo':
-            return new Response(JSON.stringify({ default_branch: 'main' }));
-          case 'https://api.github.com/repos/owner/repo/commits/main':
-          case 'https://api.github.com/repos/owner/repo/commits/abc123':
-            return new Response(JSON.stringify({ sha: 'abc123' }));
-        }
-        if (url === 'https://api.github.com/repos/owner/repo/git/trees/abc123?recursive=1') {
-          return new Response(
-            JSON.stringify({
-              tree: [
-                { path: '.cc-safety-net/rules/zeta/ignored.txt', type: 'blob' },
-                { path: '.cc-safety-net/rules/alpha/rulebook.json', type: 'blob' },
-              ],
-            }),
-          );
-        }
-        if (
-          url ===
-          'https://raw.githubusercontent.com/owner/repo/abc123/.cc-safety-net/rules/alpha/rulebook.json'
-        ) {
-          return new Response(alphaRulebook);
-        }
-        return new Response('', { status: 404 });
-      }) as unknown as typeof fetch;
+      globalThis.fetch = mockGitHubRepoRulebooksFetch({ alpha: alphaRulebook }, [
+        { path: '.cc-safety-net/rules/zeta/ignored.txt', type: 'blob' },
+      ]);
 
       const added = await addRulebookSource('owner/repo', { cwd: tempDir });
       expect(added.ok).toBe(true);
@@ -522,6 +541,84 @@ describe('rules policy recovery coverage', () => {
       ).toEqual(expect.objectContaining({ ok: false }));
     } finally {
       globalThis.fetch = originalFetch;
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('prunes unreferenced local rulebook caches on sync', async () => {
+    const tempDir = makeTempDir('rules-policy-prune-local');
+
+    try {
+      writeProjectRulebook(tempDir, 'project-rules');
+      writeProjectRulebook(tempDir, 'extra-rules');
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules', 'extra-rules']);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+      const initialLock = readLockfile(getProjectRulesLockPath(tempDir)).lock;
+      if (!initialLock) throw new Error('missing lockfile');
+      const extraEntry = initialLock.rulebooks.find((entry) => entry.name === 'extra-rules');
+      if (!extraEntry) throw new Error('missing extra-rules entry');
+      const extraCachePath = getRulebookCachePath(extraEntry, {
+        cacheConfigDir: getProjectRulesDir(tempDir),
+      });
+      expect(existsSync(extraCachePath)).toBe(true);
+
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules']);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+      expect(existsSync(extraCachePath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('prunes unreferenced GitHub rulebook caches on sync', async () => {
+    const tempDir = makeTempDir('rules-policy-prune-github');
+    const originalFetch = globalThis.fetch;
+
+    try {
+      globalThis.fetch = mockGitHubRepoRulebooksFetch({
+        alpha: rulebookJson('alpha'),
+        beta: rulebookJson('beta'),
+      });
+
+      const added = await addRulebookSource('owner/repo', { cwd: tempDir });
+      expect(added.ok).toBe(true);
+      const initialLock = readLockfile(getProjectRulesLockPath(tempDir)).lock;
+      if (!initialLock) throw new Error('missing lockfile');
+      const betaEntry = initialLock.rulebooks.find(
+        (entry) => entry.kind === 'github' && entry.name === 'beta',
+      );
+      if (!betaEntry) throw new Error('missing beta entry');
+      const betaCachePath = getRulebookCachePath(betaEntry, {
+        cacheConfigDir: getProjectRulesDir(tempDir),
+      });
+      expect(existsSync(betaCachePath)).toBe(true);
+
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['owner/repo#abc123/alpha']);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+      expect(existsSync(betaCachePath)).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('continues sync when cache pruning fails', async () => {
+    const tempDir = makeTempDir('rules-policy-prune-warn');
+
+    const cacheDir = join(dirname(getProjectRulesDir(tempDir)), 'cache', 'rulebooks', 'stale');
+    try {
+      writeProjectRulebook(tempDir, 'project-rules');
+      writeDefaultRulesConfig(getProjectRulesConfigPath(tempDir), ['project-rules']);
+      expect((await syncRulesConfig({ cwd: tempDir })).ok).toBe(true);
+
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(join(cacheDir, 'rulebook.json'), '{}', 'utf-8');
+      chmodSync(cacheDir, 0o555);
+      const synced = await syncRulesConfig({ cwd: tempDir });
+      expect(synced.ok).toBe(true);
+      expect(synced.warnings.length).toBeGreaterThan(0);
+    } finally {
+      chmodSync(cacheDir, 0o755);
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
