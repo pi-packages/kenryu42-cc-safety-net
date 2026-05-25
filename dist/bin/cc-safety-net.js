@@ -561,6 +561,66 @@ var PARANOID_INTERPRETERS_SUFFIX = `
 
 (Paranoid mode: interpreter one-liners are blocked.)`;
 
+// src/core/rules/custom-rule-validation.ts
+function validateCustomRule(rule, index, ruleNames, options = {}) {
+  const errors = [];
+  const prefix = `rules[${index}]`;
+  if (!rule || typeof rule !== "object") {
+    errors.push(`${prefix}: must be an object`);
+    return errors;
+  }
+  const r = rule;
+  const messageStyle = options.messageStyle ?? "legacy";
+  if (typeof r.name !== "string") {
+    errors.push(`${prefix}.name: required string`);
+  } else {
+    if (!NAME_PATTERN.test(r.name)) {
+      errors.push(messageStyle === "rulebook" ? `${prefix}.name: must match rule name pattern` : `${prefix}.name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)`);
+    }
+    const lowerName = r.name.toLowerCase();
+    if (ruleNames.has(lowerName)) {
+      errors.push(`${prefix}.name: duplicate rule name "${r.name}"`);
+    } else {
+      ruleNames.add(lowerName);
+    }
+  }
+  if (typeof r.command !== "string") {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.command: required string matching command pattern` : `${prefix}.command: required string`);
+  } else if (!COMMAND_PATTERN.test(r.command)) {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.command: required string matching command pattern` : `${prefix}.command: must match pattern (letters, numbers, hyphens, underscores)`);
+  }
+  if (r.subcommand !== undefined) {
+    if (typeof r.subcommand !== "string") {
+      errors.push(messageStyle === "rulebook" ? `${prefix}.subcommand: must match command pattern` : `${prefix}.subcommand: must be a string if provided`);
+    } else if (!COMMAND_PATTERN.test(r.subcommand)) {
+      errors.push(messageStyle === "rulebook" ? `${prefix}.subcommand: must match command pattern` : `${prefix}.subcommand: must match pattern (letters, numbers, hyphens, underscores)`);
+    }
+  }
+  if (!Array.isArray(r.block_args)) {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.block_args: required non-empty array` : `${prefix}.block_args: required array`);
+  } else {
+    if (r.block_args.length === 0) {
+      errors.push(messageStyle === "rulebook" ? `${prefix}.block_args: required non-empty array` : `${prefix}.block_args: must have at least one element`);
+    }
+    for (let i = 0;i < r.block_args.length; i++) {
+      const arg = r.block_args[i];
+      if (typeof arg !== "string") {
+        errors.push(messageStyle === "rulebook" ? `${prefix}.block_args[${i}]: must be a non-empty string` : `${prefix}.block_args[${i}]: must be a string`);
+      } else if (arg === "") {
+        errors.push(messageStyle === "rulebook" ? `${prefix}.block_args[${i}]: must be a non-empty string` : `${prefix}.block_args[${i}]: must not be empty`);
+      }
+    }
+  }
+  if (typeof r.reason !== "string") {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters` : `${prefix}.reason: required string`);
+  } else if (r.reason === "") {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters` : `${prefix}.reason: must not be empty`);
+  } else if (r.reason.length > MAX_REASON_LENGTH) {
+    errors.push(messageStyle === "rulebook" ? `${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters` : `${prefix}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
+  }
+  return errors;
+}
+
 // src/core/rules/policy/config-file.ts
 import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, renameSync, writeFileSync } from "node:fs";
 import { dirname as dirname2 } from "node:path";
@@ -586,9 +646,6 @@ function getProjectRulesDir(cwd) {
 function getProjectRulesConfigPath(cwd) {
   return join2(getProjectRulesDir(cwd), RULES_CONFIG_FILE);
 }
-function getProjectRulesLockPath(cwd) {
-  return join2(getProjectRulesDir(cwd), RULES_LOCK_FILE);
-}
 function getUserRulesDir(options) {
   return options?.userConfigDir ?? (options?.userConfigPath ? dirname(options.userConfigPath) : join2(getUserSafetyNetHome(), RULES_SUBDIR));
 }
@@ -612,19 +669,21 @@ function getLegacyProjectRulesConfigPath(options = {}) {
   return resolve(options.cwd ?? process.cwd(), ".safety-net.json");
 }
 function getPolicyPaths(options) {
+  const userConfigPath = options.userConfigPath ?? getUserRulesConfigPath(options);
+  const projectConfigPath = options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd);
   return {
-    userConfigPath: options.userConfigPath ?? getUserRulesConfigPath(options),
-    projectConfigPath: options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd),
-    userLockPath: getUserRulesLockPath(options),
-    projectLockPath: getRulesLockPathForConfigPath(options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd))
+    userConfigPath,
+    projectConfigPath,
+    userLockPath: getRulesLockPathForConfigPath(userConfigPath),
+    projectLockPath: getRulesLockPathForConfigPath(projectConfigPath)
   };
 }
 function getScopePaths(options) {
-  const configPath = options.global ? getUserRulesConfigPath(options) : getProjectRulesConfigPath(options.cwd);
+  const configPath = options.global ? options.userConfigPath ?? getUserRulesConfigPath(options) : options.projectConfigPath ?? getProjectRulesConfigPath(options.cwd);
   return {
     configDir: dirname(configPath),
     configPath,
-    lockPath: options.global ? getUserRulesLockPath(options) : getProjectRulesLockPath(options.cwd)
+    lockPath: getRulesLockPathForConfigPath(configPath)
   };
 }
 function getRulebookDisplaySource(entry) {
@@ -2127,7 +2186,7 @@ function validateRulebook(rulebook) {
     errors.push("rules: required array");
   } else {
     for (let i = 0;i < rb.rules.length; i++) {
-      errors.push(...validateRulebookRule(rb.rules[i], i, ruleNames));
+      errors.push(...validateCustomRule(rb.rules[i], i, ruleNames, { messageStyle: "rulebook" }));
     }
   }
   if (!Array.isArray(rb.tests)) {
@@ -2160,43 +2219,6 @@ function validateAllowedCommands(commands2, errors) {
     }
     seen.add(command);
   }
-}
-function validateRulebookRule(candidate, index, ruleNames) {
-  const errorsForRule = [];
-  const prefix = `rules[${index}]`;
-  if (!candidate || typeof candidate !== "object")
-    return [`${prefix}: must be an object`];
-  const r = candidate;
-  const namePrefix = `${prefix}.name`;
-  const ruleName = typeof r.name === "string" ? r.name : null;
-  if (!ruleName) {
-    errorsForRule.push(`${namePrefix}: required string`);
-  } else if (!NAME_PATTERN.test(ruleName)) {
-    errorsForRule.push(`${namePrefix}: must match rule name pattern`);
-  } else if (ruleNames.has(ruleName)) {
-    errorsForRule.push(`${namePrefix}: duplicate rule name "${ruleName}"`);
-  } else {
-    ruleNames.add(ruleName);
-  }
-  if (typeof r.command !== "string" || !COMMAND_PATTERN.test(r.command)) {
-    errorsForRule.push(`${prefix}.command: required string matching command pattern`);
-  }
-  if (r.subcommand !== undefined && (typeof r.subcommand !== "string" || !COMMAND_PATTERN.test(r.subcommand))) {
-    errorsForRule.push(`${prefix}.subcommand: must match command pattern`);
-  }
-  if (!Array.isArray(r.block_args) || r.block_args.length === 0) {
-    errorsForRule.push(`${prefix}.block_args: required non-empty array`);
-  } else {
-    for (let i = 0;i < r.block_args.length; i++) {
-      if (typeof r.block_args[i] !== "string" || r.block_args[i] === "") {
-        errorsForRule.push(`${prefix}.block_args[${i}]: must be a non-empty string`);
-      }
-    }
-  }
-  if (typeof r.reason !== "string" || r.reason === "" || r.reason.length > MAX_REASON_LENGTH) {
-    errorsForRule.push(`${prefix}.reason: required non-empty string up to ${MAX_REASON_LENGTH} characters`);
-  }
-  return errorsForRule;
 }
 function validateFixtures(tests, rules, errors) {
   const blockedFixtures = new Set;
@@ -2954,6 +2976,16 @@ async function removeRulebookSource(match, options = {}) {
   }
   const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
   if (!deleteResult.ok) {
+    restoreConfig(scope.configPath, before);
+    const rollback = await syncRulesConfig(options);
+    if (!rollback.ok) {
+      return {
+        ok: false,
+        errors: [...deleteResult.result.errors, ...rollback.errors],
+        warnings: rollback.warnings,
+        entries: rollback.entries
+      };
+    }
     return deleteResult.result;
   }
   return result;
@@ -3134,70 +3166,11 @@ function validateConfig(config) {
       errors.push("rules must be an array");
     } else {
       for (let i = 0;i < cfg.rules.length; i++) {
-        const rule = cfg.rules[i];
-        const ruleErrors = validateRule(rule, i, ruleNames);
-        errors.push(...ruleErrors);
+        errors.push(...validateCustomRule(cfg.rules[i], i, ruleNames));
       }
     }
   }
   return { errors, ruleNames };
-}
-function validateRule(rule, index, ruleNames) {
-  const errors = [];
-  const prefix = `rules[${index}]`;
-  if (!rule || typeof rule !== "object") {
-    errors.push(`${prefix}: must be an object`);
-    return errors;
-  }
-  const r = rule;
-  if (typeof r.name !== "string") {
-    errors.push(`${prefix}.name: required string`);
-  } else {
-    if (!NAME_PATTERN.test(r.name)) {
-      errors.push(`${prefix}.name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)`);
-    }
-    const lowerName = r.name.toLowerCase();
-    if (ruleNames.has(lowerName)) {
-      errors.push(`${prefix}.name: duplicate rule name "${r.name}"`);
-    } else {
-      ruleNames.add(lowerName);
-    }
-  }
-  if (typeof r.command !== "string") {
-    errors.push(`${prefix}.command: required string`);
-  } else if (!COMMAND_PATTERN.test(r.command)) {
-    errors.push(`${prefix}.command: must match pattern (letters, numbers, hyphens, underscores)`);
-  }
-  if (r.subcommand !== undefined) {
-    if (typeof r.subcommand !== "string") {
-      errors.push(`${prefix}.subcommand: must be a string if provided`);
-    } else if (!COMMAND_PATTERN.test(r.subcommand)) {
-      errors.push(`${prefix}.subcommand: must match pattern (letters, numbers, hyphens, underscores)`);
-    }
-  }
-  if (!Array.isArray(r.block_args)) {
-    errors.push(`${prefix}.block_args: required array`);
-  } else {
-    if (r.block_args.length === 0) {
-      errors.push(`${prefix}.block_args: must have at least one element`);
-    }
-    for (let i = 0;i < r.block_args.length; i++) {
-      const arg = r.block_args[i];
-      if (typeof arg !== "string") {
-        errors.push(`${prefix}.block_args[${i}]: must be a string`);
-      } else if (arg === "") {
-        errors.push(`${prefix}.block_args[${i}]: must not be empty`);
-      }
-    }
-  }
-  if (typeof r.reason !== "string") {
-    errors.push(`${prefix}.reason: required string`);
-  } else if (r.reason === "") {
-    errors.push(`${prefix}.reason: must not be empty`);
-  } else if (r.reason.length > MAX_REASON_LENGTH) {
-    errors.push(`${prefix}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
-  }
-  return errors;
 }
 function validateConfigFile(path) {
   return validateParsedConfigFile(path, validateConfig);

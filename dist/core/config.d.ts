@@ -1,4 +1,4 @@
-import { type Config, type ValidationResult } from '@/types';
+import type { Config, ValidationResult } from '@/types';
 export interface LoadConfigOptions {
     /** Override user config directory (for testing) */
     userConfigDir?: string;

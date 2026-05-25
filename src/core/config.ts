@@ -1,12 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  COMMAND_PATTERN,
-  type Config,
-  MAX_REASON_LENGTH,
-  NAME_PATTERN,
-  type ValidationResult,
-} from '@/types';
+import type { Config, ValidationResult } from '@/types';
+import { validateCustomRule } from './rules/custom-rule-validation';
 import { validateRulesConfig } from './rules/policy/config-file';
 import { loadRulesPolicy, rulesPolicyToConfig } from './rules/policy/scope-policy';
 import { repairLocalRulesPolicy } from './rules/policy/sync';
@@ -49,84 +44,12 @@ export function validateConfig(config: unknown): ValidationResult {
       errors.push('rules must be an array');
     } else {
       for (let i = 0; i < cfg.rules.length; i++) {
-        const rule = cfg.rules[i] as unknown;
-        const ruleErrors = validateRule(rule, i, ruleNames);
-        errors.push(...ruleErrors);
+        errors.push(...validateCustomRule(cfg.rules[i], i, ruleNames));
       }
     }
   }
 
   return { errors, ruleNames };
-}
-
-function validateRule(rule: unknown, index: number, ruleNames: Set<string>): string[] {
-  const errors: string[] = [];
-  const prefix = `rules[${index}]`;
-
-  if (!rule || typeof rule !== 'object') {
-    errors.push(`${prefix}: must be an object`);
-    return errors;
-  }
-
-  const r = rule as Record<string, unknown>;
-
-  if (typeof r.name !== 'string') {
-    errors.push(`${prefix}.name: required string`);
-  } else {
-    if (!NAME_PATTERN.test(r.name)) {
-      errors.push(
-        `${prefix}.name: must match pattern (letters, numbers, hyphens, underscores; max 64 chars)`,
-      );
-    }
-    const lowerName = r.name.toLowerCase();
-    if (ruleNames.has(lowerName)) {
-      errors.push(`${prefix}.name: duplicate rule name "${r.name}"`);
-    } else {
-      ruleNames.add(lowerName);
-    }
-  }
-
-  if (typeof r.command !== 'string') {
-    errors.push(`${prefix}.command: required string`);
-  } else if (!COMMAND_PATTERN.test(r.command)) {
-    errors.push(`${prefix}.command: must match pattern (letters, numbers, hyphens, underscores)`);
-  }
-
-  if (r.subcommand !== undefined) {
-    if (typeof r.subcommand !== 'string') {
-      errors.push(`${prefix}.subcommand: must be a string if provided`);
-    } else if (!COMMAND_PATTERN.test(r.subcommand)) {
-      errors.push(
-        `${prefix}.subcommand: must match pattern (letters, numbers, hyphens, underscores)`,
-      );
-    }
-  }
-
-  if (!Array.isArray(r.block_args)) {
-    errors.push(`${prefix}.block_args: required array`);
-  } else {
-    if (r.block_args.length === 0) {
-      errors.push(`${prefix}.block_args: must have at least one element`);
-    }
-    for (let i = 0; i < r.block_args.length; i++) {
-      const arg = r.block_args[i];
-      if (typeof arg !== 'string') {
-        errors.push(`${prefix}.block_args[${i}]: must be a string`);
-      } else if (arg === '') {
-        errors.push(`${prefix}.block_args[${i}]: must not be empty`);
-      }
-    }
-  }
-
-  if (typeof r.reason !== 'string') {
-    errors.push(`${prefix}.reason: required string`);
-  } else if (r.reason === '') {
-    errors.push(`${prefix}.reason: must not be empty`);
-  } else if (r.reason.length > MAX_REASON_LENGTH) {
-    errors.push(`${prefix}.reason: must be at most ${MAX_REASON_LENGTH} characters`);
-  }
-
-  return errors;
 }
 
 export function validateConfigFile(path: string): ValidationResult {
