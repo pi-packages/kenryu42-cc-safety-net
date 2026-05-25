@@ -1,6 +1,17 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { runRulebookFixtures } from '@/core/rules/rulebook';
+import { NAME_PATTERN } from '@/types';
 import { readRulesConfig, readScopeRulesConfig, writeJsonAtomic } from './config-file';
 import { readLockfile } from './lockfile';
 import { getRulebookCachePath, getScopePaths, RULE_SYNC_COMMAND } from './paths';
@@ -26,6 +37,10 @@ import type {
 
 interface InternalSyncRulesConfigOptions extends SyncRulesConfigOptions {
   discoveredDisplayRefs?: Map<string, string>;
+}
+
+interface RemoveRulebookSourceOptions extends SyncRulesConfigOptions {
+  deleteSource?: boolean;
 }
 
 export async function syncRulesConfig(
@@ -175,7 +190,7 @@ export async function addRulebookSource(
 
 export async function removeRulebookSource(
   match: string,
-  options: SyncRulesConfigOptions = {},
+  options: RemoveRulebookSourceOptions = {},
 ): Promise<SyncRulesConfigResult> {
   const scope = getScopePaths(options);
   const loaded = readRulesConfig(scope.configPath);
@@ -196,6 +211,10 @@ export async function removeRulebookSource(
   }
   const matches = getRemoveMatches(loaded.config.rules, lockResult.lock, match);
   if (!matches.ok) return matches.result;
+  const sourceDirs = options.deleteSource
+    ? getLocalSourceDirsForDelete(scope.configDir, matches.specs, lockResult.lock)
+    : { ok: true as const, dirs: [] };
+  if (!sourceDirs.ok) return sourceDirs.result;
   const before = readFileSync(scope.configPath, 'utf-8');
   writeJsonAtomic(scope.configPath, {
     version: 1,
@@ -205,6 +224,11 @@ export async function removeRulebookSource(
   const result = await syncRulesConfig(options);
   if (!result.ok) {
     restoreConfig(scope.configPath, before);
+    return result;
+  }
+  const deleteResult = deleteLocalSourceDirs(sourceDirs.dirs);
+  if (!deleteResult.ok) {
+    return deleteResult.result;
   }
   return result;
 }
@@ -334,6 +358,85 @@ function pruneUnreferencedRulebookCaches(
         ];
       }
     });
+}
+
+function getLocalSourceDirsForDelete(
+  configDir: string,
+  specs: string[],
+  lock: RulesLockfile | null,
+): { ok: true; dirs: string[] } | { ok: false; result: SyncRulesConfigResult } {
+  const entriesBySpec = new Map(lock?.rulebooks.map((entry) => [entry.spec, entry]) ?? []);
+  const errors = specs.flatMap((spec) => {
+    const entry = entriesBySpec.get(spec);
+    if (!entry) {
+      return NAME_PATTERN.test(spec)
+        ? []
+        : ['--delete-source can only delete local rulebook sources'];
+    }
+    return entry.kind === 'local-directory'
+      ? []
+      : ['--delete-source can only delete local rulebook sources'];
+  });
+  const dirs = specs.map((spec) => {
+    const entry = entriesBySpec.get(spec);
+    return join(configDir, entry?.kind === 'local-directory' ? entry.path : spec);
+  });
+  const dirErrors =
+    errors.length > 0 ? [] : dirs.flatMap((dir) => getLocalSourceDirDeleteError(configDir, dir));
+  const allErrors = [...errors, ...dirErrors];
+  return allErrors.length > 0
+    ? { ok: false, result: { ok: false, errors: allErrors, warnings: [], entries: [] } }
+    : { ok: true, dirs };
+}
+
+function getLocalSourceDirDeleteError(configDir: string, dir: string): string[] {
+  const resolvedConfigDir = resolve(configDir);
+  const resolvedDir = resolve(dir);
+  const relativeDir = relative(resolvedConfigDir, resolvedDir);
+  if (
+    relativeDir === '' ||
+    relativeDir === '..' ||
+    relativeDir.startsWith(`..${sep}`) ||
+    isAbsolute(relativeDir)
+  ) {
+    return [`Refusing to delete local rulebook source outside ${configDir}: ${dir}`];
+  }
+  if (!existsSync(resolvedDir)) return [`Local rulebook source directory not found: ${dir}`];
+  if (!statSync(resolvedDir).isDirectory()) {
+    return [`Local rulebook source is not a directory: ${dir}`];
+  }
+  const entries = readdirSync(resolvedDir);
+  if (!entries.includes('rulebook.json')) {
+    return [`Local rulebook source directory is missing rulebook.json: ${dir}`];
+  }
+  if (!statSync(join(resolvedDir, 'rulebook.json')).isFile()) {
+    return [`Local rulebook source rulebook.json is not a file: ${dir}`];
+  }
+  if (entries.length > 1) {
+    return [
+      `Local rulebook source directory contains extra files: ${dir}. delete manually if you really want to remove the directory.`,
+    ];
+  }
+  return [];
+}
+
+function deleteLocalSourceDirs(
+  dirs: string[],
+): { ok: true } | { ok: false; result: SyncRulesConfigResult } {
+  const errors = dirs.flatMap((dir) => {
+    try {
+      unlinkSync(join(dir, 'rulebook.json'));
+      rmdirSync(dir);
+      return [];
+    } catch (error) {
+      return [
+        `Failed to delete local rulebook source ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+  });
+  return errors.length > 0
+    ? { ok: false, result: { ok: false, errors, warnings: [], entries: [] } }
+    : { ok: true };
 }
 
 function restoreConfig(path: string, content: string | null): void {
