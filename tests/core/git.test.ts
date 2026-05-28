@@ -1682,6 +1682,34 @@ describe('git edge cases', () => {
   });
 });
 
+describe('git ssh environment overrides', () => {
+  test('GIT_SSH_COMMAND blocks network operations', () => {
+    assertBlocked(
+      'GIT_SSH_COMMAND=\'sh -c "rm -rf /"\' git fetch',
+      'Git SSH environment overrides',
+    );
+  });
+
+  test('GIT_SSH blocks network operations', () => {
+    assertBlocked('GIT_SSH=./malicious git push origin main', 'Git SSH environment overrides');
+  });
+
+  test('GIT_SSH_VARIANT blocks network operations', () => {
+    assertBlocked('GIT_SSH_VARIANT=plink git clone example:repo', 'Git SSH environment overrides');
+  });
+
+  test('exported GIT_SSH_COMMAND blocks later network operations', () => {
+    assertBlocked(
+      'export GIT_SSH_COMMAND=./malicious; git ls-remote origin',
+      'Git SSH environment overrides',
+    );
+  });
+
+  test('GIT_SSH_COMMAND still allows non-network git status', () => {
+    assertAllowed('GIT_SSH_COMMAND=./helper git status');
+  });
+});
+
 describe('safe commands', () => {
   test('git allowed', () => {
     assertAllowed('git');

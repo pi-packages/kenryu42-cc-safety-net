@@ -15,6 +15,12 @@ export const GIT_CONFIG_AFFECTING_ENV_NAMES: ReadonlySet<string> = new Set([
   'XDG_CONFIG_HOME',
 ]);
 
+export const GIT_SSH_ENV_NAMES: ReadonlySet<string> = new Set([
+  'GIT_SSH_COMMAND',
+  'GIT_SSH',
+  'GIT_SSH_VARIANT',
+]);
+
 const GIT_CONTEXT_APPEND_ASSIGNMENT_RE = /^([A-Za-z_][A-Za-z0-9_]*)\+=/;
 
 export function isGitContextEnvOverrideName(name: string): boolean {
@@ -33,6 +39,7 @@ export function isTrackedGitEnvName(name: string): boolean {
   return (
     isGitContextEnvOverrideName(name) ||
     GIT_CONFIG_AFFECTING_ENV_NAMES.has(name) ||
+    GIT_SSH_ENV_NAMES.has(name) ||
     isGitConfigEnvName(name)
   );
 }
@@ -47,6 +54,18 @@ export function parseGitContextAppendEnvAssignment(
   }
   const eqIdx = token.indexOf('=');
   return { name, value: token.slice(eqIdx + 1) };
+}
+
+export function hasGitSshEnvAssignment(envAssignments?: ReadonlyMap<string, string>): boolean {
+  if (!envAssignments) {
+    return false;
+  }
+  for (const key of envAssignments.keys()) {
+    if (GIT_SSH_ENV_NAMES.has(key)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function hasConfigAffectingEnvAssignment(

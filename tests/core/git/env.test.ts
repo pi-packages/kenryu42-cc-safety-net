@@ -42,6 +42,9 @@ describe('git env helpers', () => {
 
   test('tracks all Git env names that affect analysis', () => {
     expect(isTrackedGitEnvName('GIT_DIR')).toBe(true);
+    expect(isTrackedGitEnvName('GIT_SSH_COMMAND')).toBe(true);
+    expect(isTrackedGitEnvName('GIT_SSH')).toBe(true);
+    expect(isTrackedGitEnvName('GIT_SSH_VARIANT')).toBe(true);
     expect(isTrackedGitEnvName('GIT_CONFIG_GLOBAL')).toBe(true);
     expect(isTrackedGitEnvName('GIT_CONFIG_VALUE_0')).toBe(true);
     expect(isTrackedGitEnvName('PATH')).toBe(false);
