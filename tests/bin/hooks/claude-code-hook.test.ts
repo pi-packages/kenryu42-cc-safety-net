@@ -5,6 +5,7 @@ import { writeDefaultRulesConfig, writeStarterRulebook } from '@/core/rules/poli
 import {
   claudeCodeBashInput,
   expectNoHookOutput,
+  getHookDenyReason,
   runClaudeCodeHook,
   TEST_HOOK_CWD,
 } from './hook-helpers';
@@ -142,12 +143,16 @@ describe('Claude Code hook', () => {
   });
 
   describe('empty stdin', () => {
-    test('empty input produces no output', async () => {
-      await expectNoHookOutput(runClaudeCodeHook, '');
+    test('empty input produces deny output', async () => {
+      const result = await runClaudeCodeHook('');
+
+      expect(getHookDenyReason(result, 'claude-code')).toContain('Missing hook input JSON.');
     });
 
-    test('whitespace-only input produces no output', async () => {
-      await expectNoHookOutput(runClaudeCodeHook, '   \n\t  ');
+    test('whitespace-only input produces deny output', async () => {
+      const result = await runClaudeCodeHook('   \n\t  ');
+
+      expect(getHookDenyReason(result, 'claude-code')).toContain('Missing hook input JSON.');
     });
   });
 
@@ -157,16 +162,17 @@ describe('Claude Code hook', () => {
         CC_SAFETY_NET_STRICT: '1',
       });
 
-      expect(exitCode).toBe(0);
-      const parsed = JSON.parse(stdout);
-      expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
-      expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
-        'Failed to parse hook input JSON (strict mode)',
+      expect(getHookDenyReason({ stdout, stderr: '', exitCode }, 'claude-code')).toContain(
+        'Failed to parse hook input JSON.',
       );
     });
 
-    test('non-strict mode silently ignores invalid JSON', async () => {
-      await expectNoHookOutput(runClaudeCodeHook, '{invalid json');
+    test('non-strict mode blocks invalid JSON', async () => {
+      const result = await runClaudeCodeHook('{invalid json');
+
+      expect(getHookDenyReason(result, 'claude-code')).toContain(
+        'Failed to parse hook input JSON.',
+      );
     });
   });
 

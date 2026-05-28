@@ -13,6 +13,8 @@ export type HookResult = {
   exitCode: number;
 };
 
+export type HookFormat = 'claude-code' | 'copilot-cli' | 'gemini-cli' | 'kimi-cli';
+
 export const TEST_HOOK_CWD = mkdtempSync(join(tmpdir(), 'safety-net-hook-cwd-'));
 
 process.on('exit', () => {
@@ -122,6 +124,24 @@ export async function expectNoHookOutput(
   const { stdout, exitCode } = await run(input, env);
   expect(stdout).toBe('');
   expect(exitCode).toBe(0);
+}
+
+export function getHookDenyReason(result: HookResult, format: HookFormat): string {
+  expect(result.exitCode).toBe(0);
+  const output = JSON.parse(result.stdout);
+
+  if (format === 'gemini-cli') {
+    expect(output.decision).toBe('deny');
+    return output.reason;
+  }
+
+  if (format === 'copilot-cli') {
+    expect(output.permissionDecision).toBe('deny');
+    return output.permissionDecisionReason;
+  }
+
+  expect(output.hookSpecificOutput.permissionDecision).toBe('deny');
+  return output.hookSpecificOutput.permissionDecisionReason;
 }
 
 /**

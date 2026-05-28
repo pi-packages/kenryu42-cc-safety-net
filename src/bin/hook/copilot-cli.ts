@@ -34,7 +34,7 @@ export async function runCopilotCliHook(): Promise<void> {
   const toolArgs = parseHookJson<{ command?: string }>(
     input.toolArgs,
     outputCopilotDeny,
-    'Failed to parse toolArgs JSON (strict mode)',
+    'Failed to parse toolArgs JSON.',
   );
   if (!toolArgs) {
     return;

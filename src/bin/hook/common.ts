@@ -12,10 +12,11 @@ export async function readHookInput<T>(outputDeny: (reason: string) => void): Pr
   const inputText = Buffer.concat(chunks).toString('utf-8').trim();
 
   if (!inputText) {
+    outputDeny('Missing hook input JSON.');
     return null;
   }
 
-  return parseHookJson<T>(inputText, outputDeny, 'Failed to parse hook input JSON (strict mode)');
+  return parseHookJson<T>(inputText, outputDeny, 'Failed to parse hook input JSON.');
 }
 
 export function parseHookJson<T>(
@@ -26,7 +27,7 @@ export function parseHookJson<T>(
   try {
     return JSON.parse(inputText) as T;
   } catch {
-    if (envTruthy(ENV_FLAGS.strict)) outputDeny(strictReason);
+    outputDeny(strictReason);
     return null;
   }
 }
