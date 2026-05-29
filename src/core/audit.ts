@@ -77,21 +77,48 @@ export function writeAuditLog(
 export function redactSecrets(text: string): string {
   let result = text;
 
+  // PEM private keys
+  result = result.replace(
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    '<redacted>',
+  );
+
+  // Database connection string env vars
+  result = result.replace(
+    /\b((?:DATABASE|POSTGRES|POSTGRESQL|MYSQL|MARIADB|REDIS|MONGO(?:DB)?|DB)_URL)=([^\s]+)/gi,
+    '$1=<redacted>',
+  );
+
   // KEY=VALUE patterns for common secret-ish keys
   result = result.replace(
     /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIALS)[A-Z0-9_]*)=([^\s]+)/gi,
     '$1=<redacted>',
   );
 
-  // Authorization headers
+  // Common secret-bearing headers
+  result = result.replace(
+    /(['"]?\s*(?:authorization|cookie|x-api-key|api-key)\s*:\s*)([^'"\r\n]+)(['"]?)/gi,
+    '$1<redacted>$3',
+  );
   result = result.replace(/(['"]?\s*authorization\s*:\s*)([^'"]+)(['"]?)/gi, '$1<redacted>$3');
   result = result.replace(/(authorization\s*:\s*)([^\s"']+)(\s+[^\s"']+)?/gi, '$1<redacted>');
 
-  // URL credentials: scheme://user:pass@host
-  result = result.replace(/(https?:\/\/)([^\s/:@]+):([^\s@]+)@/gi, '$1<redacted>:<redacted>@');
+  // URL credentials: scheme://user:pass@host or scheme://token@host
+  result = result.replace(
+    /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi,
+    '$1<redacted>:<redacted>@',
+  );
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, '$1<redacted>@');
 
   // Common GitHub token prefixes
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '<redacted>');
+
+  // JWTs and AWS access key IDs
+  result = result.replace(
+    /\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g,
+    '<redacted>',
+  );
+  result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, '<redacted>');
 
   return result;
 }

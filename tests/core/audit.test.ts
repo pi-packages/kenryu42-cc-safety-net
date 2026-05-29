@@ -68,6 +68,22 @@ describe('redactSecrets', () => {
     expect(result).toContain('<redacted>');
   });
 
+  test('redacts non-HTTP URL credentials', () => {
+    const result = redactSecrets(
+      'postgres://user:password@db.example/app mysql://admin:secret@db.example/app',
+    );
+    expect(result).not.toContain('password');
+    expect(result).not.toContain('secret');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts token-only URL credentials', () => {
+    const result = redactSecrets('git://token123@example.com/repo https://token456@example.com');
+    expect(result).not.toContain('token123');
+    expect(result).not.toContain('token456');
+    expect(result).toContain('<redacted>');
+  });
+
   test('preserves non-secret content', () => {
     const result = redactSecrets('git reset --hard');
     expect(result).toBe('git reset --hard');
@@ -83,6 +99,37 @@ describe('redactSecrets', () => {
     const result = redactSecrets("curl -H 'Authorization: Basic abc123' https://example.com");
     expect(result).not.toContain('abc123');
     expect(result).toContain('<redacted>');
+  });
+
+  test('redacts cookie and API key headers', () => {
+    const result = redactSecrets(
+      'curl -H "Cookie: session=secret123" -H "X-API-Key: key123" https://example.com',
+    );
+    expect(result).not.toContain('secret123');
+    expect(result).not.toContain('key123');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts PEM private key blocks', () => {
+    const result = redactSecrets(
+      '-----BEGIN PRIVATE KEY-----\nsuper-secret-key\n-----END PRIVATE KEY-----',
+    );
+    expect(result).toBe('<redacted>');
+  });
+
+  test('redacts JWT tokens and AWS access key IDs', () => {
+    const result = redactSecrets(
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature AKIAIOSFODNN7EXAMPLE',
+    );
+    expect(result).not.toContain('eyJhbGci');
+    expect(result).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(result).toContain('<redacted>');
+  });
+
+  test('redacts database connection env vars', () => {
+    const result = redactSecrets('DATABASE_URL=postgres://user:password@db.example/app');
+    expect(result).not.toContain('password');
+    expect(result).toBe('DATABASE_URL=<redacted>');
   });
 });
 
