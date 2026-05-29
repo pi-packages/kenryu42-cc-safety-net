@@ -28,6 +28,12 @@ const REASON_PUSH_FORCE =
   'git push --force destroys remote history. Use --force-with-lease for safer force push.';
 const REASON_BRANCH_DELETE =
   'git branch -D force-deletes without merge check. Use -d for safe delete.';
+const REASON_REBASE_ABORT =
+  "git rebase --abort discards rebase conflict resolutions. Use 'git status' first.";
+const REASON_MERGE_ABORT =
+  "git merge --abort discards merge conflict resolutions. Use 'git status' first.";
+const REASON_TAG_DELETE = 'git tag -d permanently deletes tags.';
+const REASON_REFLOG_DELETE = 'git reflog delete removes recovery history.';
 const REASON_STASH_DROP =
   "git stash drop permanently deletes stashed changes. Consider 'git stash list' first.";
 const REASON_STASH_CLEAR = 'git stash clear deletes ALL stashed changes permanently.';
@@ -115,6 +121,14 @@ export function analyzeGitRule(tokens: readonly string[]): GitRuleMatch | null {
       return sharedState(analyzeGitStash(rest));
     case 'worktree':
       return sharedState(analyzeGitWorktree(rest));
+    case 'rebase':
+      return localDiscard(analyzeGitRebase(rest));
+    case 'merge':
+      return localDiscard(analyzeGitMerge(rest));
+    case 'tag':
+      return sharedState(analyzeGitTag(rest));
+    case 'reflog':
+      return sharedState(analyzeGitReflog(rest));
     default:
       return null;
   }
@@ -320,11 +334,34 @@ function analyzeGitPush(tokens: readonly string[]): string | null {
 }
 
 function analyzeGitBranch(tokens: readonly string[]): string | null {
-  const shortOpts = extractShortOpts(tokens.filter((t) => t !== '--'));
-  if (shortOpts.has('-D')) {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  const hasDelete = shortOpts.has('-D') || shortOpts.has('-d') || before.includes('--delete');
+  const hasForce = shortOpts.has('-D') || shortOpts.has('-f') || before.includes('--force');
+  if (hasDelete && hasForce) {
     return REASON_BRANCH_DELETE;
   }
   return null;
+}
+
+function analyzeGitRebase(tokens: readonly string[]): string | null {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes('--abort') ? REASON_REBASE_ABORT : null;
+}
+
+function analyzeGitMerge(tokens: readonly string[]): string | null {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes('--abort') ? REASON_MERGE_ABORT : null;
+}
+
+function analyzeGitTag(tokens: readonly string[]): string | null {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  return shortOpts.has('-d') || before.includes('--delete') ? REASON_TAG_DELETE : null;
+}
+
+function analyzeGitReflog(tokens: readonly string[]): string | null {
+  return tokens[0] === 'delete' ? REASON_REFLOG_DELETE : null;
 }
 
 function analyzeGitStash(tokens: readonly string[]): string | null {
@@ -340,14 +377,13 @@ function analyzeGitStash(tokens: readonly string[]): string | null {
 }
 
 function analyzeGitWorktree(tokens: readonly string[]): string | null {
-  const hasRemove = tokens.includes('remove');
+  const { before } = splitAtDoubleDash(tokens);
+  const hasRemove = before.includes('remove');
   if (!hasRemove) return null;
 
-  const { before } = splitAtDoubleDash(tokens);
-  for (const token of before) {
-    if (token === '--force' || token === '-f') {
-      return REASON_WORKTREE_REMOVE_FORCE;
-    }
+  const shortOpts = extractShortOpts(before);
+  if (before.includes('--force') || shortOpts.has('-f')) {
+    return REASON_WORKTREE_REMOVE_FORCE;
   }
 
   return null;

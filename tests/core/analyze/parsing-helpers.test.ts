@@ -665,6 +665,17 @@ describe('dangerousInText', () => {
   test('detects key git patterns', () => {
     expect(dangerousInText('git reset --hard')).toBe('git reset --hard');
     expect(dangerousInText('git clean -f')).toBe('git clean -f');
+    expect(dangerousInText('git clean -fd')).toBe('git clean -f');
+    expect(dangerousInText('git checkout -f')).toBe('git checkout --force');
+    expect(dangerousInText('git checkout --force')).toBe('git checkout --force');
+    expect(dangerousInText('git tag -d v1')).toBe('git tag -d');
+    expect(dangerousInText('git branch --delete --force feature')).toBe('git branch -D');
+    expect(dangerousInText('git branch --force --delete feature')).toBe('git branch -D');
+  });
+
+  test('allows checkout branch creation patterns with f in branch name', () => {
+    expect(dangerousInText('git checkout -bfeature')).toBeNull();
+    expect(dangerousInText('git checkout -Bfixup')).toBeNull();
   });
 
   test('skips find -delete when text starts with echo/rg', () => {

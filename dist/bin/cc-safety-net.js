@@ -1084,7 +1084,7 @@ function splitShellCommandsWithInfo(command) {
   if (hasUnclosedQuotes(command)) {
     return [{ tokens: [command], hasDynamicSubstitution: false }];
   }
-  const normalizedCommand = _stripAttachedIoNumbers(command.replace(/\n/g, " ; "));
+  const normalizedCommand = _stripAttachedIoNumbers(_normalizeAnsiCQuotes(command).replace(/\n/g, " ; "));
   const tokens = $parse(normalizedCommand, ENV_PROXY);
   const segments = [];
   let current = [];
@@ -1406,6 +1406,122 @@ function _pushInlineSubstitutionSegmentInfos(segments, token) {
   for (const seg of inlineSegments) {
     segments.push({ tokens: seg, hasDynamicSubstitution: false });
   }
+}
+function _normalizeAnsiCQuotes(command) {
+  let result = "";
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  for (let i = 0;i < command.length; ) {
+    const char = command[i];
+    if (!char)
+      break;
+    if (escaped) {
+      result += char;
+      escaped = false;
+      i++;
+      continue;
+    }
+    if (!inSingle && char === "\\") {
+      result += char;
+      escaped = true;
+      i++;
+      continue;
+    }
+    if (!inSingle && !inDouble && command.startsWith("$'", i)) {
+      const parsed = _readAnsiCString(command, i + 2);
+      if (!parsed) {
+        result += char;
+        i++;
+        continue;
+      }
+      result += _singleQuoteShellToken(parsed.value);
+      i = parsed.endIndex + 1;
+      continue;
+    }
+    if (!inDouble && char === "'") {
+      inSingle = !inSingle;
+    } else if (!inSingle && char === '"') {
+      inDouble = !inDouble;
+    }
+    result += char;
+    i++;
+  }
+  return result;
+}
+function _readAnsiCString(command, startIndex) {
+  let value = "";
+  for (let i = startIndex;i < command.length; i++) {
+    const char = command[i];
+    if (!char)
+      break;
+    if (char === "'") {
+      return { value, endIndex: i };
+    }
+    if (char !== "\\") {
+      value += char;
+      continue;
+    }
+    const decoded = _readAnsiEscape(command, i + 1);
+    value += decoded.value;
+    i = decoded.endIndex;
+  }
+  return null;
+}
+function _readAnsiEscape(command, index) {
+  const char = command[index];
+  if (!char)
+    return { value: "\\", endIndex: index };
+  const simpleEscapes = {
+    a: "\x07",
+    b: "\b",
+    e: "\x1B",
+    E: "\x1B",
+    f: "\f",
+    n: `
+`,
+    r: "\r",
+    t: "\t",
+    v: "\v",
+    "\\": "\\",
+    "'": "'",
+    '"': '"'
+  };
+  if (Object.hasOwn(simpleEscapes, char)) {
+    return { value: simpleEscapes[char] ?? char, endIndex: index };
+  }
+  if (char === "x") {
+    return _readFixedBaseEscape(command, index + 1, 16, 2, index);
+  }
+  if (char === "u") {
+    return _readFixedBaseEscape(command, index + 1, 16, 4, index);
+  }
+  if (char === "U") {
+    return _readFixedBaseEscape(command, index + 1, 16, 8, index);
+  }
+  if (/[0-7]/.test(char)) {
+    return _readFixedBaseEscape(command, index, 8, 3, index - 1);
+  }
+  return { value: char, endIndex: index };
+}
+function _readFixedBaseEscape(command, startIndex, base, maxLength, fallbackEndIndex) {
+  let digits = "";
+  let endIndex = startIndex - 1;
+  const digitRegex = base === 16 ? /[0-9a-fA-F]/ : /[0-7]/;
+  for (let i = startIndex;i < command.length && digits.length < maxLength; i++) {
+    const char = command[i];
+    if (!char || !digitRegex.test(char))
+      break;
+    digits += char;
+    endIndex = i;
+  }
+  if (!digits) {
+    return { value: command[fallbackEndIndex] ?? "", endIndex: fallbackEndIndex };
+  }
+  return { value: String.fromCodePoint(Number.parseInt(digits, base)), endIndex };
+}
+function _singleQuoteShellToken(value) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 function _stripAttachedIoNumbers(command) {
   let result = "";
@@ -3765,9 +3881,9 @@ All checks passed.`);
 }
 
 // src/bin/doctor/hooks.ts
-import { existsSync as existsSync11, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
+import { existsSync as existsSync12, readdirSync as readdirSync3, readFileSync as readFileSync10 } from "node:fs";
 import { homedir as homedir4, tmpdir as tmpdir3 } from "node:os";
-import { join as join8 } from "node:path";
+import { join as join9 } from "node:path";
 
 // src/core/analyze/dangerous-text.ts
 function dangerousInText(text) {
@@ -3788,17 +3904,25 @@ function dangerousInText(text) {
       reason: "git reset --merge"
     },
     {
-      regex: /\bgit\s+clean\s+(-[^\s]*f|-f)\b/,
+      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--force)\b/,
       reason: "git clean -f"
+    },
+    {
+      regex: /\bgit\s+checkout\s+[^|;]*(--force\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
+      reason: "git checkout --force"
     },
     {
       regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
       reason: "git push --force (use --force-with-lease instead)"
     },
     {
-      regex: /\bgit\s+branch\s+-D\b/,
+      regex: /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--delete\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--force\b|-[A-Za-z]*f[A-Za-z]*\b))/,
       reason: "git branch -D",
       caseSensitive: true
+    },
+    {
+      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--delete)\b/,
+      reason: "git tag -d"
     },
     {
       regex: /\bgit\s+stash\s+(drop|clear)\b/,
@@ -5018,6 +5142,10 @@ var REASON_RESET_MERGE = "git reset --merge can lose uncommitted changes. Use 'g
 var REASON_CLEAN = "git clean -f removes untracked files permanently. Use 'git clean -n' to preview first.";
 var REASON_PUSH_FORCE = "git push --force destroys remote history. Use --force-with-lease for safer force push.";
 var REASON_BRANCH_DELETE = "git branch -D force-deletes without merge check. Use -d for safe delete.";
+var REASON_REBASE_ABORT = "git rebase --abort discards rebase conflict resolutions. Use 'git status' first.";
+var REASON_MERGE_ABORT = "git merge --abort discards merge conflict resolutions. Use 'git status' first.";
+var REASON_TAG_DELETE = "git tag -d permanently deletes tags.";
+var REASON_REFLOG_DELETE = "git reflog delete removes recovery history.";
 var REASON_STASH_DROP = "git stash drop permanently deletes stashed changes. Consider 'git stash list' first.";
 var REASON_STASH_CLEAR = "git stash clear deletes ALL stashed changes permanently.";
 var REASON_WORKTREE_REMOVE_FORCE = "git worktree remove --force can delete uncommitted changes. Remove --force flag.";
@@ -5092,6 +5220,14 @@ function analyzeGitRule(tokens) {
       return sharedState(analyzeGitStash(rest));
     case "worktree":
       return sharedState(analyzeGitWorktree(rest));
+    case "rebase":
+      return localDiscard(analyzeGitRebase(rest));
+    case "merge":
+      return localDiscard(analyzeGitMerge(rest));
+    case "tag":
+      return sharedState(analyzeGitTag(rest));
+    case "reflog":
+      return sharedState(analyzeGitReflog(rest));
     default:
       return null;
   }
@@ -5256,11 +5392,30 @@ function analyzeGitPush(tokens) {
   return null;
 }
 function analyzeGitBranch(tokens) {
-  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  if (shortOpts.has("-D")) {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  const hasDelete = shortOpts.has("-D") || shortOpts.has("-d") || before.includes("--delete");
+  const hasForce = shortOpts.has("-D") || shortOpts.has("-f") || before.includes("--force");
+  if (hasDelete && hasForce) {
     return REASON_BRANCH_DELETE;
   }
   return null;
+}
+function analyzeGitRebase(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes("--abort") ? REASON_REBASE_ABORT : null;
+}
+function analyzeGitMerge(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes("--abort") ? REASON_MERGE_ABORT : null;
+}
+function analyzeGitTag(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  return shortOpts.has("-d") || before.includes("--delete") ? REASON_TAG_DELETE : null;
+}
+function analyzeGitReflog(tokens) {
+  return tokens[0] === "delete" ? REASON_REFLOG_DELETE : null;
 }
 function analyzeGitStash(tokens) {
   for (const token of tokens) {
@@ -5274,14 +5429,13 @@ function analyzeGitStash(tokens) {
   return null;
 }
 function analyzeGitWorktree(tokens) {
-  const hasRemove = tokens.includes("remove");
+  const { before } = splitAtDoubleDash(tokens);
+  const hasRemove = before.includes("remove");
   if (!hasRemove)
     return null;
-  const { before } = splitAtDoubleDash(tokens);
-  for (const token of before) {
-    if (token === "--force" || token === "-f") {
-      return REASON_WORKTREE_REMOVE_FORCE;
-    }
+  const shortOpts = extractShortOpts(before);
+  if (before.includes("--force") || shortOpts.has("-f")) {
+    return REASON_WORKTREE_REMOVE_FORCE;
   }
   return null;
 }
@@ -5726,8 +5880,9 @@ function parseParallelCommand(tokens) {
 }
 
 // src/core/analyze/tmpdir.ts
+import { existsSync as existsSync11, lstatSync as lstatSync4, realpathSync as realpathSync5 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { normalize as normalize2, sep as sep5 } from "node:path";
+import { isAbsolute as isAbsolute7, join as join8, normalize as normalize2, parse as parsePath3, sep as sep5 } from "node:path";
 function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (!envAssignments.has("TMPDIR")) {
     return false;
@@ -5736,12 +5891,39 @@ function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (tmpdirValue === "") {
     return true;
   }
-  const normalizedTmpdirValue = normalize2(tmpdirValue);
-  const sysTmpdir = normalize2(tmpdir2());
-  if (isPathOrSubpath(normalizedTmpdirValue, normalize2("/tmp")) || isPathOrSubpath(normalizedTmpdirValue, normalize2("/var/tmp")) || isPathOrSubpath(normalizedTmpdirValue, sysTmpdir)) {
+  const normalizedTmpdirValue = tryResolveExistingPathComponents(tmpdirValue);
+  if (normalizedTmpdirValue === null) {
+    return true;
+  }
+  const sysTmpdir = tryResolveExistingPathComponents(tmpdir2()) ?? normalize2(tmpdir2());
+  if (isPathOrSubpath(normalizedTmpdirValue, resolveExistingPathComponents("/tmp")) || isPathOrSubpath(normalizedTmpdirValue, resolveExistingPathComponents("/var/tmp")) || isPathOrSubpath(normalizedTmpdirValue, sysTmpdir)) {
     return false;
   }
   return true;
+}
+function tryResolveExistingPathComponents(path) {
+  try {
+    return resolveExistingPathComponents(path);
+  } catch {
+    return null;
+  }
+}
+function resolveExistingPathComponents(path) {
+  const normalized = normalize2(path);
+  if (!isAbsolute7(normalized)) {
+    return normalized;
+  }
+  const root = parsePath3(normalized).root;
+  const components = normalized.slice(root.length).split(/[\\/]+/).filter(Boolean);
+  let current = root;
+  for (let i = 0;i < components.length; i++) {
+    const candidate = join8(current, components[i] ?? "");
+    if (!existsSync11(candidate)) {
+      return join8(candidate, ...components.slice(i + 1));
+    }
+    current = lstatSync4(candidate).isSymbolicLink() ? realpathSync5(candidate) : candidate;
+  }
+  return current;
 }
 function isPathOrSubpath(path, basePath) {
   if (path === basePath) {
@@ -6077,11 +6259,21 @@ function segmentChangesCwd(segment) {
   if (head === "builtin" && unwrapped.length > 1) {
     head = unwrapped[1] ?? "";
   }
+  if (head === "time") {
+    head = getHeadAfterTimePrefix(unwrapped);
+  }
   if (head === "cd" || head === "pushd" || head === "popd") {
     return true;
   }
   const joined = segment.join(" ");
   return CWD_CHANGE_REGEX.test(joined);
+}
+function getHeadAfterTimePrefix(tokens) {
+  let i = 1;
+  while (tokens[i]?.startsWith("-")) {
+    i++;
+  }
+  return tokens[i] ?? "";
 }
 function stripLeadingGrouping(tokens) {
   let i = 0;
@@ -6514,7 +6706,7 @@ var SELF_TEST_CASES = [
 ];
 var SELF_TEST_CONFIG = { version: 1, rules: [] };
 function runSelfTest() {
-  const selfTestCwd = join8(tmpdir3(), "cc-safety-net-self-test");
+  const selfTestCwd = join9(tmpdir3(), "cc-safety-net-self-test");
   const results = SELF_TEST_CASES.map((tc) => {
     const result = analyzeCommand(tc.command, {
       cwd: selfTestCwd,
@@ -6672,11 +6864,11 @@ function _escapeRegExp(value) {
 }
 function detectOpenCode(homeDir) {
   const errors = [];
-  const configDir = join8(homeDir, ".config", "opencode");
+  const configDir = join9(homeDir, ".config", "opencode");
   const candidates = ["opencode.json", "opencode.jsonc"];
   for (const filename of candidates) {
-    const configPath = join8(configDir, filename);
-    if (existsSync11(configPath)) {
+    const configPath = join9(configDir, filename);
+    if (existsSync12(configPath)) {
       try {
         const content = readFileSync10(configPath, "utf-8");
         const json = stripJsonComments(content);
@@ -6758,7 +6950,7 @@ function _parseGeminiEnabledValue(block, scope) {
   return match[1] === "true";
 }
 function _getCodexHome(homeDir) {
-  return process.env.CODEX_HOME || join8(homeDir, ".codex");
+  return process.env.CODEX_HOME || join9(homeDir, ".codex");
 }
 function _parseCodexConfig(content) {
   const result = {};
@@ -6794,9 +6986,9 @@ function _readCodexConfig(configPath, errors) {
 }
 function detectCodex(homeDir) {
   const codexHome = _getCodexHome(homeDir);
-  const pluginCachePath = join8(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
+  const pluginCachePath = join9(codexHome, "plugins", "cache", "cc-marketplace", "safety-net");
   const errors = [];
-  if (!existsSync11(pluginCachePath)) {
+  if (!existsSync12(pluginCachePath)) {
     return { platform: "codex", status: "n/a", configPath: pluginCachePath };
   }
   try {
@@ -6811,7 +7003,7 @@ function detectCodex(homeDir) {
       errors: [`Failed to read ${pluginCachePath}: ${e instanceof Error ? e.message : String(e)}`]
     };
   }
-  const configPath = join8(codexHome, "config.toml");
+  const configPath = join9(codexHome, "config.toml");
   const config = _readCodexConfig(configPath, errors);
   if (config.safetyNetEnabled !== true) {
     return {
@@ -6883,7 +7075,7 @@ function _supportsCopilotInlineHooks(version) {
   return comparison >= 0;
 }
 function _getCopilotConfigHome(homeDir) {
-  return process.env.COPILOT_HOME || join8(homeDir, ".copilot");
+  return process.env.COPILOT_HOME || join9(homeDir, ".copilot");
 }
 function _hasSafetyNetCopilotHook(config) {
   const preToolUseHooks = config.hooks?.preToolUse ?? [];
@@ -6910,11 +7102,11 @@ function _listJsonFiles(dirPath, errors) {
   }
 }
 function _collectSafetyNetCopilotHookFiles(dirPath, errors) {
-  if (!existsSync11(dirPath))
+  if (!existsSync12(dirPath))
     return [];
   const matches = [];
   for (const filename of _listJsonFiles(dirPath, errors)) {
-    const configPath = join8(dirPath, filename);
+    const configPath = join9(dirPath, filename);
     const config = _readCopilotConfigFile(configPath, errors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       matches.push(configPath);
@@ -6923,7 +7115,7 @@ function _collectSafetyNetCopilotHookFiles(dirPath, errors) {
   return matches;
 }
 function _collectCopilotInlineConfig(configPath, errors) {
-  if (!existsSync11(configPath))
+  if (!existsSync12(configPath))
     return;
   const config = _readCopilotConfigFile(configPath, errors);
   if (!config)
@@ -6953,15 +7145,15 @@ function _resolveCopilotInlineDisableSource(inlineSources) {
 }
 function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const configHome = _getCopilotConfigHome(homeDir);
-  const repoHookDir = join8(cwd, ".github", "hooks");
-  const userHookDir = join8(configHome, "hooks");
-  const repoConfigDir = join8(cwd, ".github", "copilot");
+  const repoHookDir = join9(cwd, ".github", "hooks");
+  const userHookDir = join9(configHome, "hooks");
+  const repoConfigDir = join9(cwd, ".github", "copilot");
   const inlineSupport = _supportsCopilotInlineHooks(copilotCliVersion);
   const inlineErrors = inlineSupport === true ? errors : undefined;
   const inlineSources = {
-    userConfig: _collectCopilotInlineConfig(join8(configHome, "config.json"), inlineErrors),
-    repoSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.json"), inlineErrors),
-    localSettings: _collectCopilotInlineConfig(join8(repoConfigDir, "settings.local.json"), inlineErrors)
+    userConfig: _collectCopilotInlineConfig(join9(configHome, "config.json"), inlineErrors),
+    repoSettings: _collectCopilotInlineConfig(join9(repoConfigDir, "settings.json"), inlineErrors),
+    localSettings: _collectCopilotInlineConfig(join9(repoConfigDir, "settings.local.json"), inlineErrors)
   };
   if (inlineSupport !== false) {
     const disableSource = _resolveCopilotInlineDisableSource(inlineSources);
@@ -6975,10 +7167,10 @@ function _checkCopilotEnabled(homeDir, cwd, copilotCliVersion, errors) {
   const repoHookPaths = _collectSafetyNetCopilotHookFiles(repoHookDir, errors);
   const userHookSupport = _supportsCopilotUserHookFiles(copilotCliVersion);
   const userHookErrors = userHookSupport === true ? errors : undefined;
-  const userHookFiles = existsSync11(userHookDir) ? _listJsonFiles(userHookDir, userHookErrors) : [];
+  const userHookFiles = existsSync12(userHookDir) ? _listJsonFiles(userHookDir, userHookErrors) : [];
   const userHookPaths = [];
   for (const filename of userHookFiles) {
-    const configPath = join8(userHookDir, filename);
+    const configPath = join9(userHookDir, filename);
     const config = _readCopilotConfigFile(configPath, userHookErrors);
     if (config && _hasSafetyNetCopilotHook(config)) {
       userHookPaths.push(configPath);
@@ -7286,12 +7478,12 @@ function printReport(report) {
 }
 
 // src/bin/explain/config.ts
-import { existsSync as existsSync12 } from "node:fs";
+import { existsSync as existsSync13 } from "node:fs";
 import { resolve as resolve8 } from "node:path";
 function getConfigSource(options2) {
   const projectPath = getProjectRulesConfigPath(options2?.cwd);
   let invalidProjectPath = null;
-  if (existsSync12(projectPath)) {
+  if (existsSync13(projectPath)) {
     const validation = validateRulesConfigFile(projectPath);
     if (validation.errors.length === 0) {
       return { configSource: projectPath, configValid: true };
@@ -7299,7 +7491,7 @@ function getConfigSource(options2) {
     invalidProjectPath = projectPath;
   }
   const userPath = options2?.userConfigPath ?? getUserRulesConfigPath(options2);
-  if (existsSync12(userPath)) {
+  if (existsSync13(userPath)) {
     const validation = validateRulesConfigFile(userPath);
     return { configSource: userPath, configValid: validation.errors.length === 0 };
   }
@@ -8380,9 +8572,9 @@ function showCommandHelp(commandName) {
 }
 
 // src/core/audit.ts
-import { appendFileSync, existsSync as existsSync13, mkdirSync as mkdirSync3 } from "node:fs";
+import { appendFileSync, existsSync as existsSync14, mkdirSync as mkdirSync3 } from "node:fs";
 import { homedir as homedir5 } from "node:os";
-import { join as join9 } from "node:path";
+import { join as join10 } from "node:path";
 function sanitizeSessionIdForFilename(sessionId) {
   const raw = sessionId.trim();
   if (!raw) {
@@ -8401,12 +8593,12 @@ function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {})
     return;
   }
   const home = options2.homeDir ?? homedir5();
-  const logsDir = join9(home, ".cc-safety-net", "logs");
+  const logsDir = join10(home, ".cc-safety-net", "logs");
   try {
-    if (!existsSync13(logsDir)) {
+    if (!existsSync14(logsDir)) {
       mkdirSync3(logsDir, { recursive: true });
     }
-    const logFile = join9(logsDir, `${safeSessionId}.jsonl`);
+    const logFile = join10(logsDir, `${safeSessionId}.jsonl`);
     const entry = {
       ts: new Date().toISOString(),
       decision: options2.decision ?? "deny",
@@ -8606,9 +8798,9 @@ async function runGeminiCLIHook() {
 }
 
 // src/bin/hook/install.ts
-import { existsSync as existsSync14, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
+import { existsSync as existsSync15, mkdirSync as mkdirSync4, readFileSync as readFileSync11, writeFileSync as writeFileSync3 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
-import { dirname as dirname9, join as join10 } from "node:path";
+import { dirname as dirname9, join as join11 } from "node:path";
 var OPENCODE_PLUGIN = "cc-safety-net@latest";
 var KIMI_HOOK_COMMAND = "npx -y cc-safety-net hook --kimi-cli";
 var KIMI_HOOK_BLOCK = `[[hooks]]
@@ -8620,15 +8812,15 @@ function getHomeDir() {
   return process.env.HOME ?? homedir6();
 }
 function getOpenCodeConfigDir() {
-  return process.env.OPENCODE_CONFIG_DIR ?? join10(process.env.XDG_CONFIG_HOME ?? join10(getHomeDir(), ".config"), "opencode");
+  return process.env.OPENCODE_CONFIG_DIR ?? join11(process.env.XDG_CONFIG_HOME ?? join11(getHomeDir(), ".config"), "opencode");
 }
 function getOpenCodeConfigPath() {
   const configDir = getOpenCodeConfigDir();
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join10(configDir, file));
-  return candidates.find((path) => existsSync14(path)) ?? join10(configDir, "opencode.jsonc");
+  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join11(configDir, file));
+  return candidates.find((path) => existsSync15(path)) ?? join11(configDir, "opencode.jsonc");
 }
 function getKimiConfigPath() {
-  return join10(process.env.KIMI_SHARE_DIR ?? join10(getHomeDir(), ".kimi"), "config.toml");
+  return join11(process.env.KIMI_SHARE_DIR ?? join11(getHomeDir(), ".kimi"), "config.toml");
 }
 function isWhitespace(char) {
   return char !== undefined && /\s/.test(char);
@@ -8855,7 +9047,7 @@ function readOpenCodeConfig(configPath) {
 function installOpenCode() {
   const configPath = getOpenCodeConfigPath();
   mkdirSync4(dirname9(configPath), { recursive: true });
-  if (!existsSync14(configPath)) {
+  if (!existsSync15(configPath)) {
     writeFileSync3(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
 `);
     return { path: configPath, alreadyInstalled: false };
@@ -8876,7 +9068,7 @@ function installOpenCode() {
 }
 function uninstallOpenCode() {
   const configPath = getOpenCodeConfigPath();
-  if (!existsSync14(configPath))
+  if (!existsSync15(configPath))
     return { path: configPath, alreadyInstalled: false };
   const opencode = readOpenCodeConfig(configPath);
   if (!opencode.plugins?.some(isManagedOpenCodePlugin)) {
@@ -8988,7 +9180,7 @@ function removeKimiInlineHook(content, hooksRange) {
 function installKimiCli() {
   const configPath = getKimiConfigPath();
   mkdirSync4(dirname9(configPath), { recursive: true });
-  if (!existsSync14(configPath)) {
+  if (!existsSync15(configPath)) {
     writeFileSync3(configPath, `${KIMI_HOOK_BLOCK}
 `);
     return { path: configPath, alreadyInstalled: false };
@@ -9001,7 +9193,7 @@ function installKimiCli() {
 }
 function uninstallKimiCli() {
   const configPath = getKimiConfigPath();
-  if (!existsSync14(configPath))
+  if (!existsSync15(configPath))
     return { path: configPath, alreadyInstalled: false };
   const content = readFileSync11(configPath, "utf-8");
   if (!content.includes(KIMI_HOOK_COMMAND))
@@ -9078,8 +9270,8 @@ async function runKimiCliHook() {
 }
 
 // src/bin/rule/index.ts
-import { existsSync as existsSync17 } from "node:fs";
-import { join as join13 } from "node:path";
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join14 } from "node:path";
 
 // src/bin/rule/doc.ts
 var RULE_DOC = `# Custom Rules Reference
@@ -9320,8 +9512,8 @@ function printResultWarnings(result) {
 }
 
 // src/bin/rule/migrate.ts
-import { existsSync as existsSync15, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname10, join as join11 } from "node:path";
+import { existsSync as existsSync16, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname10, join as join12 } from "node:path";
 var PROJECT_MIGRATED_FROM = ".safety-net.json";
 var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
 async function runRulesMigrate(options2) {
@@ -9346,7 +9538,7 @@ async function runRulesMigrate(options2) {
   return results.every((result) => result) ? 0 : 1;
 }
 async function migrateRulesScope(options2) {
-  if (!existsSync15(options2.legacyPath)) {
+  if (!existsSync16(options2.legacyPath)) {
     console.log(`No legacy config found at ${options2.legacyPath}`);
     return true;
   }
@@ -9364,7 +9556,7 @@ async function migrateRulesScope(options2) {
   }
   const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
   const rulebookName = getMigratedRulebookName(dirname10(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
-  const rulebookPath = join11(dirname10(options2.configPath), rulebookName, "rulebook.json");
+  const rulebookPath = join12(dirname10(options2.configPath), rulebookName, "rulebook.json");
   const snapshots = [
     snapshotFile(options2.configPath),
     snapshotFile(rulebookPath),
@@ -9426,11 +9618,11 @@ function getMigratedRulebookName(configDir, sources, defaultRulebookName, migrat
   const existing = sources.find((source) => getRulebookMigratedFrom(configDir, source) === migratedFrom);
   if (existing)
     return existing;
-  if (!existsSync15(join11(configDir, defaultRulebookName, "rulebook.json")))
+  if (!existsSync16(join12(configDir, defaultRulebookName, "rulebook.json")))
     return defaultRulebookName;
   for (let i = 2;; i++) {
     const name = `${defaultRulebookName}-${i}`;
-    if (!existsSync15(join11(configDir, name, "rulebook.json")))
+    if (!existsSync16(join12(configDir, name, "rulebook.json")))
       return name;
   }
 }
@@ -9453,7 +9645,7 @@ function getMigratedRulebook(name, migratedFrom, rules) {
 }
 function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom, legacyRules) {
   const config = readRulesConfig(configPath).config;
-  if (!config?.rules.includes(rulebookName) || !existsSync15(rulebookPath))
+  if (!config?.rules.includes(rulebookName) || !existsSync16(rulebookPath))
     return false;
   try {
     const rulebook = JSON.parse(readFileSync12(rulebookPath, "utf-8"));
@@ -9463,7 +9655,7 @@ function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom,
   }
 }
 function snapshotFile(path) {
-  return { path, content: existsSync15(path) ? readFileSync12(path, "utf-8") : null };
+  return { path, content: existsSync16(path) ? readFileSync12(path, "utf-8") : null };
 }
 function restoreFiles(snapshots) {
   for (const snapshot of snapshots) {
@@ -9476,8 +9668,8 @@ function restoreFiles(snapshots) {
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync16, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname11, join as join12, resolve as resolve9 } from "node:path";
+import { existsSync as existsSync17, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname11, join as join13, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9496,7 +9688,7 @@ function runRulesVerify(options2 = {}) {
   const warnings = [];
   const githubSourceRules = getGitHubSourceRulesValidation(githubSourceRulesDir);
   printRulesVerifyHeader();
-  if (existsSync16(userConfig)) {
+  if (existsSync17(userConfig)) {
     const result = validateRulesConfigFile(userConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(userConfig, getUserRulesLockPath({ userConfigDir }), {
       userConfigDir
@@ -9511,9 +9703,9 @@ function runRulesVerify(options2 = {}) {
     if (result.errors.length > 0)
       hasErrors = true;
   }
-  if (existsSync16(legacyUserConfig)) {
+  if (existsSync17(legacyUserConfig)) {
     hasWarnings = true;
-    if (existsSync16(userConfig)) {
+    if (existsSync17(userConfig)) {
       warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
     } else {
       const result = validateConfigFile(legacyUserConfig);
@@ -9529,7 +9721,7 @@ function runRulesVerify(options2 = {}) {
       warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
     }
   }
-  if (existsSync16(projectConfig)) {
+  if (existsSync17(projectConfig)) {
     const result = validateRulesConfigFile(projectConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(projectConfig, getRulesLockPathForConfigPath(projectConfig), {
       userConfigDir
@@ -9543,11 +9735,11 @@ function runRulesVerify(options2 = {}) {
     });
     if (result.errors.length > 0)
       hasErrors = true;
-    if (existsSync16(legacyProjectConfig)) {
+    if (existsSync17(legacyProjectConfig)) {
       hasWarnings = true;
       warnings.push(getLegacyRulesConfigWarning("project", "cleanup"));
     }
-  } else if (existsSync16(legacyProjectConfig)) {
+  } else if (existsSync17(legacyProjectConfig)) {
     hasWarnings = true;
     hasErrors = true;
     const result = validateConfigFile(legacyProjectConfig);
@@ -9612,7 +9804,7 @@ function getLegacyRulesConfigWarning(scope, action) {
   return `Warning: Legacy ${scope} config is no longer supported. Fix or delete the ${label}, then run \`npx -y cc-safety-net rule migrate\`.`;
 }
 function getGitHubSourceRulesValidation(path) {
-  if (!existsSync16(path))
+  if (!existsSync17(path))
     return null;
   const result = validateGitHubSourceRules(path);
   if (result.ruleNames.size === 0 && result.errors.length === 0)
@@ -9647,8 +9839,8 @@ function validateGitHubSourceRules(path) {
       errors.push(`${entry.name} must be a rulebook directory`);
       continue;
     }
-    const rulebookPath = join12(path, entry.name, "rulebook.json");
-    if (!existsSync16(rulebookPath)) {
+    const rulebookPath = join13(path, entry.name, "rulebook.json");
+    if (!existsSync17(rulebookPath)) {
       errors.push(`${entry.name}/rulebook.json is required`);
       continue;
     }
@@ -9788,8 +9980,8 @@ async function runRuleCommand(args) {
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? "user-rules" : "project-rules";
     ensureDefaultRulebookSource(configPath, rulebookName);
-    const rulebookPath = join13(dir, rulebookName, "rulebook.json");
-    if (!existsSync17(rulebookPath))
+    const rulebookPath = join14(dir, rulebookName, "rulebook.json");
+    if (!existsSync18(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options2);
     printRuleChangeResult(result, "Rule config initialized.");
@@ -9910,7 +10102,7 @@ function parseRuleFlags(args) {
   return flags;
 }
 function ensureDefaultRulebookSource(configPath, rulebookName) {
-  if (!existsSync17(configPath)) {
+  if (!existsSync18(configPath)) {
     writeDefaultRulesConfig(configPath, [rulebookName]);
     return;
   }
@@ -9925,9 +10117,9 @@ function ensureDefaultRulebookSource(configPath, rulebookName) {
 }
 
 // src/bin/statusline.ts
-import { existsSync as existsSync18, readFileSync as readFileSync14 } from "node:fs";
+import { existsSync as existsSync19, readFileSync as readFileSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join14 } from "node:path";
+import { join as join15 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
@@ -9951,11 +10143,11 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join14(homedir7(), ".claude", "settings.json");
+  return join15(homedir7(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
-  if (!existsSync18(settingsPath)) {
+  if (!existsSync19(settingsPath)) {
     return false;
   }
   try {

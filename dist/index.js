@@ -233,17 +233,25 @@ function dangerousInText(text) {
       reason: "git reset --merge"
     },
     {
-      regex: /\bgit\s+clean\s+(-[^\s]*f|-f)\b/,
+      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--force)\b/,
       reason: "git clean -f"
+    },
+    {
+      regex: /\bgit\s+checkout\s+[^|;]*(--force\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
+      reason: "git checkout --force"
     },
     {
       regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
       reason: "git push --force (use --force-with-lease instead)"
     },
     {
-      regex: /\bgit\s+branch\s+-D\b/,
+      regex: /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--delete\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--force\b|-[A-Za-z]*f[A-Za-z]*\b))/,
       reason: "git branch -D",
       caseSensitive: true
+    },
+    {
+      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--delete)\b/,
+      reason: "git tag -d"
     },
     {
       regex: /\bgit\s+stash\s+(drop|clear)\b/,
@@ -597,7 +605,7 @@ function splitShellCommandsWithInfo(command) {
   if (hasUnclosedQuotes(command)) {
     return [{ tokens: [command], hasDynamicSubstitution: false }];
   }
-  const normalizedCommand = _stripAttachedIoNumbers(command.replace(/\n/g, " ; "));
+  const normalizedCommand = _stripAttachedIoNumbers(_normalizeAnsiCQuotes(command).replace(/\n/g, " ; "));
   const tokens = $parse(normalizedCommand, ENV_PROXY);
   const segments = [];
   let current = [];
@@ -919,6 +927,122 @@ function _pushInlineSubstitutionSegmentInfos(segments, token) {
   for (const seg of inlineSegments) {
     segments.push({ tokens: seg, hasDynamicSubstitution: false });
   }
+}
+function _normalizeAnsiCQuotes(command) {
+  let result = "";
+  let inSingle = false;
+  let inDouble = false;
+  let escaped = false;
+  for (let i = 0;i < command.length; ) {
+    const char = command[i];
+    if (!char)
+      break;
+    if (escaped) {
+      result += char;
+      escaped = false;
+      i++;
+      continue;
+    }
+    if (!inSingle && char === "\\") {
+      result += char;
+      escaped = true;
+      i++;
+      continue;
+    }
+    if (!inSingle && !inDouble && command.startsWith("$'", i)) {
+      const parsed = _readAnsiCString(command, i + 2);
+      if (!parsed) {
+        result += char;
+        i++;
+        continue;
+      }
+      result += _singleQuoteShellToken(parsed.value);
+      i = parsed.endIndex + 1;
+      continue;
+    }
+    if (!inDouble && char === "'") {
+      inSingle = !inSingle;
+    } else if (!inSingle && char === '"') {
+      inDouble = !inDouble;
+    }
+    result += char;
+    i++;
+  }
+  return result;
+}
+function _readAnsiCString(command, startIndex) {
+  let value = "";
+  for (let i = startIndex;i < command.length; i++) {
+    const char = command[i];
+    if (!char)
+      break;
+    if (char === "'") {
+      return { value, endIndex: i };
+    }
+    if (char !== "\\") {
+      value += char;
+      continue;
+    }
+    const decoded = _readAnsiEscape(command, i + 1);
+    value += decoded.value;
+    i = decoded.endIndex;
+  }
+  return null;
+}
+function _readAnsiEscape(command, index) {
+  const char = command[index];
+  if (!char)
+    return { value: "\\", endIndex: index };
+  const simpleEscapes = {
+    a: "\x07",
+    b: "\b",
+    e: "\x1B",
+    E: "\x1B",
+    f: "\f",
+    n: `
+`,
+    r: "\r",
+    t: "\t",
+    v: "\v",
+    "\\": "\\",
+    "'": "'",
+    '"': '"'
+  };
+  if (Object.hasOwn(simpleEscapes, char)) {
+    return { value: simpleEscapes[char] ?? char, endIndex: index };
+  }
+  if (char === "x") {
+    return _readFixedBaseEscape(command, index + 1, 16, 2, index);
+  }
+  if (char === "u") {
+    return _readFixedBaseEscape(command, index + 1, 16, 4, index);
+  }
+  if (char === "U") {
+    return _readFixedBaseEscape(command, index + 1, 16, 8, index);
+  }
+  if (/[0-7]/.test(char)) {
+    return _readFixedBaseEscape(command, index, 8, 3, index - 1);
+  }
+  return { value: char, endIndex: index };
+}
+function _readFixedBaseEscape(command, startIndex, base, maxLength, fallbackEndIndex) {
+  let digits = "";
+  let endIndex = startIndex - 1;
+  const digitRegex = base === 16 ? /[0-9a-fA-F]/ : /[0-7]/;
+  for (let i = startIndex;i < command.length && digits.length < maxLength; i++) {
+    const char = command[i];
+    if (!char || !digitRegex.test(char))
+      break;
+    digits += char;
+    endIndex = i;
+  }
+  if (!digits) {
+    return { value: command[fallbackEndIndex] ?? "", endIndex: fallbackEndIndex };
+  }
+  return { value: String.fromCodePoint(Number.parseInt(digits, base)), endIndex };
+}
+function _singleQuoteShellToken(value) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 function _stripAttachedIoNumbers(command) {
   let result = "";
@@ -2606,6 +2730,10 @@ var REASON_RESET_MERGE = "git reset --merge can lose uncommitted changes. Use 'g
 var REASON_CLEAN = "git clean -f removes untracked files permanently. Use 'git clean -n' to preview first.";
 var REASON_PUSH_FORCE = "git push --force destroys remote history. Use --force-with-lease for safer force push.";
 var REASON_BRANCH_DELETE = "git branch -D force-deletes without merge check. Use -d for safe delete.";
+var REASON_REBASE_ABORT = "git rebase --abort discards rebase conflict resolutions. Use 'git status' first.";
+var REASON_MERGE_ABORT = "git merge --abort discards merge conflict resolutions. Use 'git status' first.";
+var REASON_TAG_DELETE = "git tag -d permanently deletes tags.";
+var REASON_REFLOG_DELETE = "git reflog delete removes recovery history.";
 var REASON_STASH_DROP = "git stash drop permanently deletes stashed changes. Consider 'git stash list' first.";
 var REASON_STASH_CLEAR = "git stash clear deletes ALL stashed changes permanently.";
 var REASON_WORKTREE_REMOVE_FORCE = "git worktree remove --force can delete uncommitted changes. Remove --force flag.";
@@ -2680,6 +2808,14 @@ function analyzeGitRule(tokens) {
       return sharedState(analyzeGitStash(rest));
     case "worktree":
       return sharedState(analyzeGitWorktree(rest));
+    case "rebase":
+      return localDiscard(analyzeGitRebase(rest));
+    case "merge":
+      return localDiscard(analyzeGitMerge(rest));
+    case "tag":
+      return sharedState(analyzeGitTag(rest));
+    case "reflog":
+      return sharedState(analyzeGitReflog(rest));
     default:
       return null;
   }
@@ -2844,11 +2980,30 @@ function analyzeGitPush(tokens) {
   return null;
 }
 function analyzeGitBranch(tokens) {
-  const shortOpts = extractShortOpts(tokens.filter((t) => t !== "--"));
-  if (shortOpts.has("-D")) {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  const hasDelete = shortOpts.has("-D") || shortOpts.has("-d") || before.includes("--delete");
+  const hasForce = shortOpts.has("-D") || shortOpts.has("-f") || before.includes("--force");
+  if (hasDelete && hasForce) {
     return REASON_BRANCH_DELETE;
   }
   return null;
+}
+function analyzeGitRebase(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes("--abort") ? REASON_REBASE_ABORT : null;
+}
+function analyzeGitMerge(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  return before.includes("--abort") ? REASON_MERGE_ABORT : null;
+}
+function analyzeGitTag(tokens) {
+  const { before } = splitAtDoubleDash(tokens);
+  const shortOpts = extractShortOpts(before);
+  return shortOpts.has("-d") || before.includes("--delete") ? REASON_TAG_DELETE : null;
+}
+function analyzeGitReflog(tokens) {
+  return tokens[0] === "delete" ? REASON_REFLOG_DELETE : null;
 }
 function analyzeGitStash(tokens) {
   for (const token of tokens) {
@@ -2862,14 +3017,13 @@ function analyzeGitStash(tokens) {
   return null;
 }
 function analyzeGitWorktree(tokens) {
-  const hasRemove = tokens.includes("remove");
+  const { before } = splitAtDoubleDash(tokens);
+  const hasRemove = before.includes("remove");
   if (!hasRemove)
     return null;
-  const { before } = splitAtDoubleDash(tokens);
-  for (const token of before) {
-    if (token === "--force" || token === "-f") {
-      return REASON_WORKTREE_REMOVE_FORCE;
-    }
+  const shortOpts = extractShortOpts(before);
+  if (before.includes("--force") || shortOpts.has("-f")) {
+    return REASON_WORKTREE_REMOVE_FORCE;
   }
   return null;
 }
@@ -3314,8 +3468,9 @@ function parseParallelCommand(tokens) {
 }
 
 // src/core/analyze/tmpdir.ts
+import { existsSync as existsSync3, lstatSync as lstatSync3, realpathSync as realpathSync5 } from "node:fs";
 import { tmpdir as tmpdir2 } from "node:os";
-import { normalize as normalize2, sep as sep3 } from "node:path";
+import { isAbsolute as isAbsolute5, join as join3, normalize as normalize2, parse as parsePath3, sep as sep3 } from "node:path";
 function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (!envAssignments.has("TMPDIR")) {
     return false;
@@ -3324,12 +3479,39 @@ function isTmpdirOverriddenToNonTemp(envAssignments) {
   if (tmpdirValue === "") {
     return true;
   }
-  const normalizedTmpdirValue = normalize2(tmpdirValue);
-  const sysTmpdir = normalize2(tmpdir2());
-  if (isPathOrSubpath(normalizedTmpdirValue, normalize2("/tmp")) || isPathOrSubpath(normalizedTmpdirValue, normalize2("/var/tmp")) || isPathOrSubpath(normalizedTmpdirValue, sysTmpdir)) {
+  const normalizedTmpdirValue = tryResolveExistingPathComponents(tmpdirValue);
+  if (normalizedTmpdirValue === null) {
+    return true;
+  }
+  const sysTmpdir = tryResolveExistingPathComponents(tmpdir2()) ?? normalize2(tmpdir2());
+  if (isPathOrSubpath(normalizedTmpdirValue, resolveExistingPathComponents("/tmp")) || isPathOrSubpath(normalizedTmpdirValue, resolveExistingPathComponents("/var/tmp")) || isPathOrSubpath(normalizedTmpdirValue, sysTmpdir)) {
     return false;
   }
   return true;
+}
+function tryResolveExistingPathComponents(path) {
+  try {
+    return resolveExistingPathComponents(path);
+  } catch {
+    return null;
+  }
+}
+function resolveExistingPathComponents(path) {
+  const normalized = normalize2(path);
+  if (!isAbsolute5(normalized)) {
+    return normalized;
+  }
+  const root = parsePath3(normalized).root;
+  const components = normalized.slice(root.length).split(/[\\/]+/).filter(Boolean);
+  let current = root;
+  for (let i = 0;i < components.length; i++) {
+    const candidate = join3(current, components[i] ?? "");
+    if (!existsSync3(candidate)) {
+      return join3(candidate, ...components.slice(i + 1));
+    }
+    current = lstatSync3(candidate).isSymbolicLink() ? realpathSync5(candidate) : candidate;
+  }
+  return current;
 }
 function isPathOrSubpath(path, basePath) {
   if (path === basePath) {
@@ -3745,11 +3927,21 @@ function segmentChangesCwd(segment) {
   if (head === "builtin" && unwrapped.length > 1) {
     head = unwrapped[1] ?? "";
   }
+  if (head === "time") {
+    head = getHeadAfterTimePrefix(unwrapped);
+  }
   if (head === "cd" || head === "pushd" || head === "popd") {
     return true;
   }
   const joined = segment.join(" ");
   return CWD_CHANGE_REGEX.test(joined);
+}
+function getHeadAfterTimePrefix(tokens) {
+  let i = 1;
+  while (tokens[i]?.startsWith("-")) {
+    i++;
+  }
+  return tokens[i] ?? "";
 }
 function stripLeadingGrouping(tokens) {
   let i = 0;
@@ -4162,7 +4354,7 @@ function isCcSafetyNetPackage(value) {
 }
 
 // src/core/config.ts
-import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
+import { existsSync as existsSync9, readFileSync as readFileSync8 } from "node:fs";
 import { resolve as resolve7 } from "node:path";
 
 // src/core/rules/custom-rule-validation.ts
@@ -4226,12 +4418,12 @@ function validateCustomRule(rule, index, ruleNames, options2 = {}) {
 }
 
 // src/core/rules/policy/config-file.ts
-import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
+import { existsSync as existsSync4, mkdirSync, readFileSync as readFileSync3, renameSync, writeFileSync } from "node:fs";
 import { dirname as dirname5 } from "node:path";
 
 // src/core/rules/policy/paths.ts
 import { homedir as homedir2 } from "node:os";
-import { dirname as dirname4, join as join3, resolve as resolve4 } from "node:path";
+import { dirname as dirname4, join as join4, resolve as resolve4 } from "node:path";
 var RULES_CONFIG_FILE = "rule.json";
 var RULES_LOCK_FILE = "rule.lock";
 var RULEBOOK_FILE = "rulebook.json";
@@ -4248,26 +4440,26 @@ function getProjectRulesDir(cwd) {
   return resolve4(cwd ?? process.cwd(), RULES_DIR);
 }
 function getProjectRulesConfigPath(cwd) {
-  return join3(getProjectRulesDir(cwd), RULES_CONFIG_FILE);
+  return join4(getProjectRulesDir(cwd), RULES_CONFIG_FILE);
 }
 function getUserRulesDir(options2) {
-  return options2?.userConfigDir ?? (options2?.userConfigPath ? dirname4(options2.userConfigPath) : join3(getUserSafetyNetHome(), RULES_SUBDIR));
+  return options2?.userConfigDir ?? (options2?.userConfigPath ? dirname4(options2.userConfigPath) : join4(getUserSafetyNetHome(), RULES_SUBDIR));
 }
 function getUserSafetyNetHome() {
   const home = process.env[CC_SAFETY_NET_HOME];
-  return home ? resolve4(home) : join3(homedir2(), SAFETY_NET_DIR);
+  return home ? resolve4(home) : join4(homedir2(), SAFETY_NET_DIR);
 }
 function getUserRulesConfigPath(options2) {
-  return join3(getUserRulesDir(options2), RULES_CONFIG_FILE);
+  return join4(getUserRulesDir(options2), RULES_CONFIG_FILE);
 }
 function getUserRulesLockPath(options2) {
-  return join3(getUserRulesDir(options2), RULES_LOCK_FILE);
+  return join4(getUserRulesDir(options2), RULES_LOCK_FILE);
 }
 function getRulesLockPathForConfigPath(configPath) {
-  return join3(dirname4(configPath), RULES_LOCK_FILE);
+  return join4(dirname4(configPath), RULES_LOCK_FILE);
 }
 function getLegacyUserRulesConfigPath(options2 = {}) {
-  return join3(dirname4(getUserRulesDir(options2)), LEGACY_RULES_CONFIG_FILE);
+  return join4(dirname4(getUserRulesDir(options2)), LEGACY_RULES_CONFIG_FILE);
 }
 function getLegacyProjectRulesConfigPath(options2 = {}) {
   return resolve4(options2.cwd ?? process.cwd(), ".safety-net.json");
@@ -4298,7 +4490,7 @@ function getRulebookDisplaySource(entry) {
 }
 function getRulebookCachePath(entry, options2) {
   const digestHex = entry.digest.startsWith("sha256:") ? entry.digest.slice(7) : entry.digest;
-  return join3(getRulesCacheDir(options2), "rulebooks", `${getRulebookCacheSlug(entry)}--${digestHex.slice(0, 12)}`, RULEBOOK_FILE);
+  return join4(getRulesCacheDir(options2), "rulebooks", `${getRulebookCacheSlug(entry)}--${digestHex.slice(0, 12)}`, RULEBOOK_FILE);
 }
 function getRulebookCacheSlug(entry) {
   const source = entry.kind === "github" && entry.display_ref ? `${entry.owner}/${entry.repo}#${entry.display_ref}/${entry.name}` : entry.spec;
@@ -4308,7 +4500,7 @@ function getRepositoryRulebookPath(name) {
   return `${RULES_DIR}/${name}/${RULEBOOK_FILE}`;
 }
 function getRulesCacheDir(options2) {
-  return join3(dirname4(options2?.cacheConfigDir ?? getUserRulesDir(options2)), CACHE_SUBDIR);
+  return join4(dirname4(options2?.cacheConfigDir ?? getUserRulesDir(options2)), CACHE_SUBDIR);
 }
 
 // src/core/rules/policy/sources.ts
@@ -4527,7 +4719,7 @@ function validateRulesConfig(config) {
   return { errors, sources };
 }
 function readRulesConfig(path) {
-  if (!existsSync3(path)) {
+  if (!existsSync4(path)) {
     return { config: null, errors: [] };
   }
   try {
@@ -4601,8 +4793,8 @@ function writeJsonAtomic(path, value) {
 }
 
 // src/core/rules/policy/scope-policy.ts
-import { existsSync as existsSync6, readFileSync as readFileSync6 } from "node:fs";
-import { dirname as dirname6, isAbsolute as isAbsolute5, join as join5, relative, resolve as resolve5, sep as sep4 } from "node:path";
+import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
+import { dirname as dirname6, isAbsolute as isAbsolute6, join as join6, relative, resolve as resolve5, sep as sep4 } from "node:path";
 
 // src/core/rules/rulebook.ts
 function validateRulebook(rulebook) {
@@ -4761,11 +4953,11 @@ function assertValidRulebook(rulebook) {
 }
 
 // src/core/rules/policy/lockfile.ts
-import { existsSync as existsSync4, readFileSync as readFileSync4 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
 var SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 var RULEBOOK_SOURCE_KINDS = new Set(["local-directory", "github"]);
 function readLockfile(path) {
-  if (!existsSync4(path)) {
+  if (!existsSync5(path)) {
     return { lock: null, errors: [] };
   }
   try {
@@ -4874,8 +5066,8 @@ function requiredString(candidate, field) {
 
 // src/core/rules/policy/resolver.ts
 import { createHash } from "node:crypto";
-import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
-import { join as join4 } from "node:path";
+import { existsSync as existsSync6, readFileSync as readFileSync5 } from "node:fs";
+import { join as join5 } from "node:path";
 async function resolveRulebookSource(spec, configDir, options2) {
   if (isGitHubRulebookSource(spec)) {
     return resolveGitHubRulebook(spec);
@@ -4928,7 +5120,7 @@ async function discoverGitHubRepositoryRulebooks(source) {
 function resolveLocalRulebook(spec, configDir, _options) {
   assertBareRulebookName(spec);
   const path = getLocalRulebookPath(configDir, spec);
-  if (!existsSync5(path)) {
+  if (!existsSync6(path)) {
     throw new Error(`Rulebook source not found: ${spec}`);
   }
   const content = readFileSync5(path, "utf-8");
@@ -4980,7 +5172,7 @@ async function resolveGitHubRulebook(spec) {
 }
 async function readLockedGitHubRulebook(entry, configDir, options2) {
   const cachePath = getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir });
-  if (existsSync5(cachePath)) {
+  if (existsSync6(cachePath)) {
     const content = readFileSync5(cachePath, "utf-8");
     if (sha256Digest(content) === entry.digest) {
       return { entry, rulebook: assertRulebookMatchesLockEntry(content, entry), content };
@@ -5018,7 +5210,7 @@ async function resolveGitHubCommit(owner, repo, ref, source) {
   return commitJson.sha;
 }
 function getLocalRulebookPath(configDir, name) {
-  return join4(configDir, name, RULEBOOK_FILE);
+  return join5(configDir, name, RULEBOOK_FILE);
 }
 function sha256Digest(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
@@ -5138,7 +5330,7 @@ function loadScopePolicy(config, lockPath, configDir, options2, source) {
 function validateLockedRulebook(entry, configDir, options2) {
   const errors = [];
   const cachePath = getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir });
-  if (!existsSync6(cachePath)) {
+  if (!existsSync7(cachePath)) {
     return [`missing cache entry for ${entry.spec}; run ${RULE_SYNC_COMMAND}`];
   }
   const cacheContent = readFileSync6(cachePath, "utf-8");
@@ -5153,12 +5345,12 @@ function validateLockedRulebook(entry, configDir, options2) {
   if (entry.kind === "local-directory") {
     const sourcePath = resolve5(configDir, entry.path);
     const sourceRelative = relative(resolve5(configDir), sourcePath);
-    if (sourceRelative === ".." || sourceRelative.startsWith(`..${sep4}`) || isAbsolute5(sourceRelative)) {
+    if (sourceRelative === ".." || sourceRelative.startsWith(`..${sep4}`) || isAbsolute6(sourceRelative)) {
       errors.push(`lockfile local source path for ${entry.spec} must stay within ${configDir}; run ${RULE_SYNC_COMMAND}`);
       return errors;
     }
-    const localPath = join5(sourcePath, RULEBOOK_FILE);
-    if (!existsSync6(localPath)) {
+    const localPath = join6(sourcePath, RULEBOOK_FILE);
+    if (!existsSync7(localPath)) {
       errors.push(`missing local source for ${entry.spec}; run ${RULE_SYNC_COMMAND}`);
     } else {
       const localContent = readFileSync6(localPath, "utf-8");
@@ -5186,7 +5378,7 @@ function getLegacyRulesConfigErrors(paths, options2) {
   ]));
 }
 function getLegacyRulesConfigError(legacyPath, configPath, migratedFrom) {
-  if (!existsSync6(legacyPath))
+  if (!existsSync7(legacyPath))
     return [];
   if (hasMigrationEvidence(configPath, migratedFrom))
     return [];
@@ -5203,8 +5395,8 @@ function hasMigrationEvidence(configPath, migratedFrom) {
 function getRulebookMigratedFrom(configDir, source) {
   if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(source))
     return null;
-  const path = join5(configDir, source, RULEBOOK_FILE);
-  if (!existsSync6(path))
+  const path = join6(configDir, source, RULEBOOK_FILE);
+  if (!existsSync7(path))
     return null;
   try {
     const rulebook = JSON.parse(readFileSync6(path, "utf-8"));
@@ -5267,8 +5459,8 @@ function withTerminalPeriod(message) {
 
 // src/core/rules/policy/sync.ts
 import {
-  existsSync as existsSync7,
-  lstatSync as lstatSync3,
+  existsSync as existsSync8,
+  lstatSync as lstatSync4,
   mkdirSync as mkdirSync2,
   readdirSync,
   readFileSync as readFileSync7,
@@ -5277,7 +5469,7 @@ import {
   unlinkSync,
   writeFileSync as writeFileSync2
 } from "node:fs";
-import { dirname as dirname7, isAbsolute as isAbsolute6, join as join6, relative as relative2, resolve as resolve6, sep as sep5 } from "node:path";
+import { dirname as dirname7, isAbsolute as isAbsolute7, join as join7, relative as relative2, resolve as resolve6, sep as sep5 } from "node:path";
 async function syncRulesConfig(options2 = {}) {
   const internalOptions = options2;
   const scope = getScopePaths(options2);
@@ -5351,7 +5543,7 @@ async function testRulebookSources(sources, options2 = {}) {
 async function addRulebookSource(source, options2 = {}) {
   const scope = getScopePaths(options2);
   mkdirSync2(scope.configDir, { recursive: true });
-  const before = existsSync7(scope.configPath) ? readFileSync7(scope.configPath, "utf-8") : null;
+  const before = existsSync8(scope.configPath) ? readFileSync7(scope.configPath, "utf-8") : null;
   const scopeConfig = readScopeRulesConfig(scope.configPath);
   if (!scopeConfig.ok)
     return scopeConfig.result;
@@ -5497,12 +5689,12 @@ function writeCache(content, entry, configDir, options2) {
   writeFileSync2(path, content, "utf-8");
 }
 function pruneUnreferencedRulebookCaches(entries, configDir, options2) {
-  const cacheRoot = join6(dirname7(configDir), "cache", "rulebooks");
-  if (!existsSync7(cacheRoot))
+  const cacheRoot = join7(dirname7(configDir), "cache", "rulebooks");
+  if (!existsSync8(cacheRoot))
     return [];
   const keep = new Set(entries.map((entry) => dirname7(getRulebookCachePath(entry, { ...options2, cacheConfigDir: configDir }))));
   return readdirSync(cacheRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).flatMap((entry) => {
-    const path = join6(cacheRoot, entry.name);
+    const path = join7(cacheRoot, entry.name);
     if (keep.has(path))
       return [];
     try {
@@ -5526,7 +5718,7 @@ function getLocalSourceDirsForDelete(configDir, specs, lock) {
   });
   const dirs = specs.map((spec) => {
     const entry = entriesBySpec.get(spec);
-    return join6(configDir, entry?.kind === "local-directory" ? entry.path : spec);
+    return join7(configDir, entry?.kind === "local-directory" ? entry.path : spec);
   });
   const dirErrors = errors.length > 0 ? [] : dirs.flatMap((dir) => getLocalSourceDirDeleteError(configDir, dir));
   const allErrors = [...errors, ...dirErrors];
@@ -5536,19 +5728,19 @@ function getLocalSourceDirDeleteError(configDir, dir) {
   const resolvedConfigDir = resolve6(configDir);
   const resolvedDir = resolve6(dir);
   const relativeDir = relative2(resolvedConfigDir, resolvedDir);
-  if (relativeDir === "" || relativeDir === ".." || relativeDir.startsWith(`..${sep5}`) || isAbsolute6(relativeDir)) {
+  if (relativeDir === "" || relativeDir === ".." || relativeDir.startsWith(`..${sep5}`) || isAbsolute7(relativeDir)) {
     return [`Refusing to delete local rulebook source outside ${configDir}: ${dir}`];
   }
-  if (!existsSync7(resolvedDir))
+  if (!existsSync8(resolvedDir))
     return [`Local rulebook source directory not found: ${dir}`];
-  if (!lstatSync3(resolvedDir).isDirectory()) {
+  if (!lstatSync4(resolvedDir).isDirectory()) {
     return [`Local rulebook source is not a directory: ${dir}`];
   }
   const entries = readdirSync(resolvedDir);
   if (!entries.includes("rulebook.json")) {
     return [`Local rulebook source directory is missing rulebook.json: ${dir}`];
   }
-  if (!lstatSync3(join6(resolvedDir, "rulebook.json")).isFile()) {
+  if (!lstatSync4(join7(resolvedDir, "rulebook.json")).isFile()) {
     return [`Local rulebook source rulebook.json is not a file: ${dir}`];
   }
   if (entries.length > 1) {
@@ -5561,7 +5753,7 @@ function getLocalSourceDirDeleteError(configDir, dir) {
 function deleteLocalSourceDirs(dirs) {
   const errors = dirs.flatMap((dir) => {
     try {
-      unlinkSync(join6(dir, "rulebook.json"));
+      unlinkSync(join7(dir, "rulebook.json"));
       rmdirSync(dir);
       return [];
     } catch (error) {
@@ -5624,7 +5816,7 @@ function validateConfigFile(path) {
 function readConfigFileInput(path) {
   const errors = [];
   const ruleNames = new Set;
-  if (!existsSync8(path)) {
+  if (!existsSync9(path)) {
     errors.push(`File not found: ${path}`);
     return { ok: false, result: { errors, ruleNames } };
   }

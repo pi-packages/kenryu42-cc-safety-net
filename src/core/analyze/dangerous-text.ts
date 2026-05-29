@@ -22,17 +22,26 @@ export function dangerousInText(text: string): string | null {
       reason: 'git reset --merge',
     },
     {
-      regex: /\bgit\s+clean\s+(-[^\s]*f|-f)\b/,
+      regex: /\bgit\s+clean\s+(-[^\s]*f[^\s]*|--force)\b/,
       reason: 'git clean -f',
+    },
+    {
+      regex: /\bgit\s+checkout\s+[^|;]*(--force\b|-(?![bBU])[^\s]*f[^\s]*\b)/,
+      reason: 'git checkout --force',
     },
     {
       regex: /\bgit\s+push\s+[^|;]*(-f\b|--force\b)(?!-with-lease)/,
       reason: 'git push --force (use --force-with-lease instead)',
     },
     {
-      regex: /\bgit\s+branch\s+-D\b/,
+      regex:
+        /\bgit\s+branch\b(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--delete\b|-[A-Za-z]*d[A-Za-z]*\b))(?=[^\n;|&]*(?:-D\b|-[A-Za-z]*D[A-Za-z]*\b|--force\b|-[A-Za-z]*f[A-Za-z]*\b))/,
       reason: 'git branch -D',
       caseSensitive: true,
+    },
+    {
+      regex: /\bgit\s+tag\s+[^|;]*(-[^\s]*d[^\s]*|--delete)\b/,
+      reason: 'git tag -d',
     },
     {
       regex: /\bgit\s+stash\s+(drop|clear)\b/,

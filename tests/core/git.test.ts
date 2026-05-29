@@ -1623,6 +1623,10 @@ describe('git worktree', () => {
     assertBlocked('git worktree remove -f /tmp/wt', 'git worktree remove --force');
   });
 
+  test('git worktree remove bundled force blocked', () => {
+    assertBlocked('git worktree remove -fa /tmp/wt', 'git worktree remove --force');
+  });
+
   test('git worktree remove without force allowed', () => {
     assertAllowed('git worktree remove /tmp/wt');
   });
@@ -1641,8 +1645,33 @@ describe('git branch', () => {
     assertBlocked('git branch -Dv feature', 'git branch -D');
   });
 
+  test('git branch long force delete blocked', () => {
+    assertBlocked('git branch --delete --force feature', 'git branch -D');
+    assertBlocked('git branch --force --delete feature', 'git branch -D');
+    assertBlocked('git branch -d -f feature', 'git branch -D');
+  });
+
   test('git branch -d allowed', () => {
     assertAllowed('git branch -d feature');
+  });
+});
+
+describe('git missing destructive subcommands', () => {
+  test('git rebase abort blocked', () => {
+    assertBlocked('git rebase --abort', 'git rebase --abort');
+  });
+
+  test('git merge abort blocked', () => {
+    assertBlocked('git merge --abort', 'git merge --abort');
+  });
+
+  test('git tag delete blocked', () => {
+    assertBlocked('git tag -d v1', 'git tag -d');
+    assertBlocked('git tag --delete v1', 'git tag -d');
+  });
+
+  test('git reflog delete blocked', () => {
+    assertBlocked('git reflog delete HEAD@{0}', 'git reflog delete');
   });
 });
 
