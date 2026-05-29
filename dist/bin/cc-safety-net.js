@@ -7524,7 +7524,7 @@ function redactEnvVars(envMap) {
   return result;
 }
 function redactEnvAssignmentsInString(str) {
-  return str.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, "$1=<redacted>");
+  return str.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=\$\([^)]*\)/g, "$1=<redacted>").replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, "$1=<redacted>");
 }
 function redactEnvAssignmentTokens(tokens) {
   return tokens.map((token) => {
@@ -7961,8 +7961,8 @@ function explainCommand2(command2, options2) {
     };
   }
   const segments2 = splitShellCommands(command2);
-  const redactedInput = command2.replace(/\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g, "$1=<redacted>");
-  const redactedSegments = segments2.map((seg) => redactEnvAssignmentTokens(seg));
+  const redactedInput = redactEnvAssignmentsInString(command2);
+  const redactedSegments = splitShellCommands(redactedInput).map((seg) => redactEnvAssignmentTokens(seg));
   trace.steps.push({
     type: "parse",
     input: redactedInput,
@@ -8613,11 +8613,17 @@ function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {})
 }
 function redactSecrets(text) {
   let result = text;
+  result = result.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "<redacted>");
+  result = result.replace(/\b((?:DATABASE|POSTGRES|POSTGRESQL|MYSQL|MARIADB|REDIS|MONGO(?:DB)?|DB)_URL)=([^\s]+)/gi, "$1=<redacted>");
   result = result.replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIALS)[A-Z0-9_]*)=([^\s]+)/gi, "$1=<redacted>");
+  result = result.replace(/(['"]?\s*(?:authorization|cookie|x-api-key|api-key)\s*:\s*)([^'"\r\n]+)(['"]?)/gi, "$1<redacted>$3");
   result = result.replace(/(['"]?\s*authorization\s*:\s*)([^'"]+)(['"]?)/gi, "$1<redacted>$3");
   result = result.replace(/(authorization\s*:\s*)([^\s"']+)(\s+[^\s"']+)?/gi, "$1<redacted>");
-  result = result.replace(/(https?:\/\/)([^\s/:@]+):([^\s@]+)@/gi, "$1<redacted>:<redacted>@");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi, "$1<redacted>:<redacted>@");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, "$1<redacted>@");
   result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g, "<redacted>");
+  result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "<redacted>");
   return result;
 }
 

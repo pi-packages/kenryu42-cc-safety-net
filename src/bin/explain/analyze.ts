@@ -39,13 +39,10 @@ export function explainCommand(command: string, options?: ExplainOptions): Expla
   }
 
   const segments = splitShellCommands(command);
-  // Redact env assignments in parse trace to prevent leaking secrets in JSON output
-  // Handle both quoted values (single/double) and unquoted values
-  const redactedInput = command.replace(
-    /\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"]*"|'[^']*'|\S+)/g,
-    '$1=<redacted>',
+  const redactedInput = redactEnvAssignmentsInString(command);
+  const redactedSegments = splitShellCommands(redactedInput).map((seg) =>
+    redactEnvAssignmentTokens(seg),
   );
-  const redactedSegments = segments.map((seg) => redactEnvAssignmentTokens(seg));
   trace.steps.push({
     type: 'parse',
     input: redactedInput,

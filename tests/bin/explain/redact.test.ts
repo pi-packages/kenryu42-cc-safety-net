@@ -145,4 +145,23 @@ describe('secret redaction in shell wrappers and interpreters', () => {
       wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand.includes('secret value'),
     ).toBe(false);
   });
+
+  test('shell-wrapper step redacts command substitution env assignment contents', () => {
+    const result = explainCommand('bash -c "TOKEN=$(cat /etc/passwd) git status"');
+    const allSteps = getTraceSteps(result);
+    const wrapperStep = allSteps.find((s) => s.type === 'shell-wrapper');
+    expect(wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand).toBe(
+      'TOKEN=<redacted> git status',
+    );
+    expect(
+      wrapperStep?.type === 'shell-wrapper' && wrapperStep.innerCommand.includes('/etc/passwd'),
+    ).toBe(false);
+  });
+
+  test('human output does not leak command substitution env assignment contents', () => {
+    const result = explainCommand('bash -c "TOKEN=$(printf secret value) git status"');
+    const output = formatTraceHuman(result);
+    expect(output).not.toContain('secret value');
+    expect(output).toContain('TOKEN=<redacted>');
+  });
 });
