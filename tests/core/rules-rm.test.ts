@@ -589,7 +589,17 @@ describe('analyzeRm (unit)', () => {
         cwd: '/tmp',
         allowTmpdirVar: false,
       }),
-    ).toContain('rm -rf outside cwd');
+    ).toContain('shell variables');
+  });
+
+  test('blocks shell variable targets with dynamic-path reason', () => {
+    expect(analyzeRm(['rm', '-rf', '$tmpbase', '$outside'], { cwd: '/tmp' })).toContain(
+      'shell variables',
+    );
+  });
+
+  test('blocks backtick targets with dynamic-path reason', () => {
+    expect(analyzeRm(['rm', '-rf', '`pwd`/escape'], { cwd: '/tmp' })).toContain('shell variables');
   });
 
   test('handles non-string cwd defensively', () => {

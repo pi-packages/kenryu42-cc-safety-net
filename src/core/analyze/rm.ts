@@ -35,6 +35,8 @@ function normalizePathForComparison(p: string): string {
 
 const REASON_RM_RF =
   'rm -rf outside cwd is blocked. Use explicit paths within the current directory, or delete manually.';
+const REASON_RM_RF_DYNAMIC_TARGET =
+  'rm -rf target contains shell variables that cannot be verified safely. Use literal paths within cwd, /tmp, /var/tmp, or $TMPDIR.';
 const REASON_RM_RF_ROOT_HOME =
   'rm -rf targeting root or home directory is extremely dangerous and always blocked.';
 const REASON_RM_HOME_CWD =
@@ -58,6 +60,7 @@ interface RmContext {
 type TargetClassification =
   | { kind: 'root_or_home_target' }
   | { kind: 'temp_target' }
+  | { kind: 'dynamic_target' }
   | { kind: 'home_cwd_target' }
   | { kind: 'cwd_self_target' }
   | { kind: 'within_anchored_cwd' }
@@ -127,6 +130,10 @@ function classifyTarget(target: string, ctx: RmContext): TargetClassification {
     return { kind: 'temp_target' };
   }
 
+  if (isDynamicTarget(target)) {
+    return { kind: 'dynamic_target' };
+  }
+
   const anchoredCwd = ctx.anchoredCwd;
   if (anchoredCwd) {
     if (isCwdHomeForRmPolicy(anchoredCwd, ctx.homeDir)) {
@@ -154,6 +161,8 @@ function reasonForClassification(
       return REASON_RM_RF_ROOT_HOME;
     case 'temp_target':
       return null;
+    case 'dynamic_target':
+      return REASON_RM_RF_DYNAMIC_TARGET;
     case 'home_cwd_target':
       return REASON_RM_HOME_CWD;
     case 'cwd_self_target':
@@ -230,6 +239,10 @@ function getHomeDirForRmPolicy(): string {
   return process.env.HOME ?? homedir();
 }
 
+function isDynamicTarget(target: string): boolean {
+  return target.includes('$') || target.includes('`');
+}
+
 function isCwdHomeForRmPolicy(cwd: string, homeDir: string): boolean {
   try {
     return normalizePathForComparison(cwd) === normalizePathForComparison(homeDir);
@@ -266,7 +279,7 @@ function isTargetWithinCwd(target: string, originalCwd: string, effectiveCwd?: s
     return false;
   }
 
-  if (target.includes('$') || target.includes('`')) {
+  if (isDynamicTarget(target)) {
     return false;
   }
 

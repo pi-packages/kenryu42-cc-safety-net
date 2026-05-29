@@ -4300,6 +4300,7 @@ function normalizePathForComparison(p) {
   return normalized;
 }
 var REASON_RM_RF = "rm -rf outside cwd is blocked. Use explicit paths within the current directory, or delete manually.";
+var REASON_RM_RF_DYNAMIC_TARGET = "rm -rf target contains shell variables that cannot be verified safely. Use literal paths within cwd, /tmp, /var/tmp, or $TMPDIR.";
 var REASON_RM_RF_ROOT_HOME = "rm -rf targeting root or home directory is extremely dangerous and always blocked.";
 var REASON_RM_HOME_CWD = "rm -rf in home directory is dangerous. Change to a project directory first.";
 function analyzeRm(tokens, options2 = {}) {
@@ -4354,6 +4355,9 @@ function classifyTarget(target, ctx) {
   if (isTempTarget(target, ctx.trustTmpdirVar)) {
     return { kind: "temp_target" };
   }
+  if (isDynamicTarget(target)) {
+    return { kind: "dynamic_target" };
+  }
   const anchoredCwd = ctx.anchoredCwd;
   if (anchoredCwd) {
     if (isCwdHomeForRmPolicy(anchoredCwd, ctx.homeDir)) {
@@ -4374,6 +4378,8 @@ function reasonForClassification(classification, ctx) {
       return REASON_RM_RF_ROOT_HOME;
     case "temp_target":
       return null;
+    case "dynamic_target":
+      return REASON_RM_RF_DYNAMIC_TARGET;
     case "home_cwd_target":
       return REASON_RM_HOME_CWD;
     case "cwd_self_target":
@@ -4435,6 +4441,9 @@ function isTempTarget(path, allowTmpdirVar) {
 function getHomeDirForRmPolicy() {
   return process.env.HOME ?? homedir3();
 }
+function isDynamicTarget(target) {
+  return target.includes("$") || target.includes("`");
+}
 function isCwdHomeForRmPolicy(cwd, homeDir) {
   try {
     return normalizePathForComparison(cwd) === normalizePathForComparison(homeDir);
@@ -4465,7 +4474,7 @@ function isTargetWithinCwd(target, originalCwd, effectiveCwd) {
   if (target.startsWith("~") || target.startsWith("$HOME") || target.startsWith("${HOME}")) {
     return false;
   }
-  if (target.includes("$") || target.includes("`")) {
+  if (isDynamicTarget(target)) {
     return false;
   }
   if (target.startsWith("/") || /^[A-Za-z]:[\\/]/.test(target)) {
