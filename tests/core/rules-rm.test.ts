@@ -477,6 +477,20 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('TMPDIR symlink from temp to non-temp blocked', () => {
+    setup();
+    const outsideTemp = mkdtempSync(join(process.cwd(), 'outside-temp-'));
+    const tempLink = join(tmpdir(), `safety-net-tmpdir-link-${Date.now()}`);
+    symlinkSync(outsideTemp, tempLink);
+    try {
+      assertBlocked(`TMPDIR=${toShellPath(tempLink)} rm -rf $TMPDIR/test-dir`, 'rm -rf', tmpDir);
+    } finally {
+      rmSync(tempLink, { force: true });
+      rmSync(outsideTemp, { recursive: true, force: true });
+      cleanup();
+    }
+  });
+
   test('TMPDIR=/tmp/../root blocked (path traversal escapes temp)', () => {
     setup();
     try {
