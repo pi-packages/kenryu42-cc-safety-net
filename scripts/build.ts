@@ -5,6 +5,7 @@
  */
 
 import pkg from '../package.json';
+import { formatSubprocessFailure } from './subprocess-output';
 
 const result = await Bun.build({
   entrypoints: ['src/index.ts', 'src/bin/cc-safety-net.ts'],
@@ -35,13 +36,13 @@ if (binOutput) {
 // Run build:types and build:schema
 const typesResult = Bun.spawnSync(['bun', 'run', 'build:types']);
 if (typesResult.exitCode !== 0) {
-  console.error('build:types failed');
+  console.error(formatSubprocessFailure('build:types', typesResult));
   process.exit(1);
 }
 
 const schemaResult = Bun.spawnSync(['bun', 'run', 'build:schema']);
 if (schemaResult.exitCode !== 0) {
-  console.error('build:schema failed');
+  console.error(formatSubprocessFailure('build:schema', schemaResult));
   process.exit(1);
 }
 
