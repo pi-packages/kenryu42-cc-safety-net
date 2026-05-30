@@ -529,6 +529,46 @@ describe('edge cases', () => {
       assertBlocked("echo / | parallel bash -c 'rm -rf {}'", 'rm -rf');
     });
 
+    test('parallel pipe mode treats marker commands as dynamic stdin', () => {
+      const fixture = createLinkedWorktreeFixture();
+      try {
+        withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
+          assertBlocked(
+            'parallel --pipe git clean -f ::: .',
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+          assertBlocked(
+            'parallel --pipepart git clean -f ::: .',
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+        });
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
+    test('parallel env placeholders make child command dynamic', () => {
+      const fixture = createLinkedWorktreeFixture();
+      try {
+        withEnv({ SAFETY_NET_WORKTREE: '1' }, () => {
+          assertBlocked(
+            `FOO="git clean -f {}" parallel --env FOO sh -c '$FOO' ::: -ffdx`,
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+          assertBlocked(
+            `FOO="git clean -f {}" parallel --env=FOO sh -c '$FOO' ::: -ffdx`,
+            'git clean -f',
+            fixture.linkedWorktree,
+          );
+        });
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
     test('parallel commands mode blocks rm rf', () => {
       assertBlocked("parallel ::: 'rm -rf /'", 'rm -rf');
     });
