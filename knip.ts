@@ -1,9 +1,10 @@
 import type { KnipConfig } from 'knip';
 
 const config: KnipConfig = {
-  entry: ['src/index.ts!', 'src/bin/cc-safety-net.ts!', 'scripts/**/*.ts'],
-  project: ['src/**/*.ts!', 'scripts/**/*.ts!'],
-  ignore: ['src/opencode/builtin-commands/templates/cc-safety-net.ts'],
+  entry: ['src/index.ts!', 'src/bin/cc-safety-net.ts!'],
+  project: ['src/**/*.ts!'],
+  ignoreBinaries: ['gh', 'tsc'],
+  ignoreDependencies: ['lint-staged'],
   ignoreIssues: {
     'src/bin/hook/common.ts': ['exports'],
     'src/bin/rule/format.ts': ['exports'],
