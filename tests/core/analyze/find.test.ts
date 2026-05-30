@@ -6,8 +6,18 @@ describe('find -delete tests', () => {
     assertBlocked('find . -name "*.pyc" -delete', 'find -delete');
   });
 
+  test('find empty delete blocked', () => {
+    assertBlocked('find . -empty -delete', 'find -delete');
+  });
+
   test('find name argument delete allowed', () => {
     assertAllowed('find . -name -delete -print');
+  });
+
+  test('find numeric and file reference predicate arguments named delete allowed', () => {
+    assertAllowed('find . -gid -delete -print');
+    assertAllowed('find . -inum -delete -print');
+    assertAllowed('find . -samefile -delete -print');
   });
 
   test('find exec echo delete allowed', () => {

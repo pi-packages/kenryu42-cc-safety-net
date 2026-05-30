@@ -3,6 +3,47 @@ import { getBasename, stripWrappers } from '@/core/shell';
 import type { AnalyzeNestedOverrides } from '@/types';
 
 const REASON_FIND_DELETE = 'find -delete permanently removes files. Use -print first to preview.';
+const FIND_PRIMARIES_WITH_VALUE = new Set([
+  '-amin',
+  '-anewer',
+  '-atime',
+  '-cmin',
+  '-cnewer',
+  '-context',
+  '-ctime',
+  '-exec',
+  '-execdir',
+  '-fprint',
+  '-fprintf',
+  '-fstype',
+  '-gid',
+  '-group',
+  '-ilname',
+  '-iname',
+  '-inum',
+  '-ipath',
+  '-iwholename',
+  '-iregex',
+  '-links',
+  '-lname',
+  '-mmin',
+  '-mtime',
+  '-name',
+  '-newer',
+  '-newerXY',
+  '-path',
+  '-perm',
+  '-printf',
+  '-regex',
+  '-samefile',
+  '-size',
+  '-type',
+  '-uid',
+  '-used',
+  '-user',
+  '-wholename',
+  '-xtype',
+]);
 
 export interface AnalyzeFindContext {
   cwd?: string;
@@ -125,26 +166,7 @@ function findHasDelete(tokens: readonly string[]): boolean {
     }
 
     // Options that take an argument - skip the next token
-    if (
-      token === '-name' ||
-      token === '-iname' ||
-      token === '-path' ||
-      token === '-ipath' ||
-      token === '-regex' ||
-      token === '-iregex' ||
-      token === '-type' ||
-      token === '-user' ||
-      token === '-group' ||
-      token === '-perm' ||
-      token === '-size' ||
-      token === '-mtime' ||
-      token === '-ctime' ||
-      token === '-atime' ||
-      token === '-newer' ||
-      token === '-printf' ||
-      token === '-fprint' ||
-      token === '-fprintf'
-    ) {
+    if (findPrimaryTakesValue(token)) {
       i += 2; // Skip option and its argument
       continue;
     }
@@ -158,4 +180,8 @@ function findHasDelete(tokens: readonly string[]): boolean {
   }
 
   return false;
+}
+
+function findPrimaryTakesValue(token: string): boolean {
+  return FIND_PRIMARIES_WITH_VALUE.has(token) || /^-newer[A-Za-z]{2}$/.test(token);
 }
