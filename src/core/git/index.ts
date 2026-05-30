@@ -1,10 +1,6 @@
-import {
-  effectiveGitConfigEnablesRecursiveSubmodules,
-  TRUSTED_GIT_BINARIES,
-} from '@/core/git/config';
 import { hasGitSshEnvAssignment } from '@/core/git/env';
 import { extractGitSubcommandAndRest } from '@/core/git/parse';
-import { analyzeGitRule, getCheckoutPositionalArgs } from '@/core/git/rules';
+import { analyzeGitRule } from '@/core/git/rules';
 import {
   type GitAnalyzeOptions,
   type GitWorktreeRelaxation,
@@ -58,11 +54,3 @@ export function getGitWorktreeRelaxation(
   }
   return getGitWorktreeRelaxationForMatch(tokens, match, options);
 }
-
-/** @internal Exported for testing */
-export {
-  effectiveGitConfigEnablesRecursiveSubmodules as _effectiveGitConfigEnablesRecursiveSubmodules,
-  extractGitSubcommandAndRest as _extractGitSubcommandAndRest,
-  getCheckoutPositionalArgs as _getCheckoutPositionalArgs,
-  TRUSTED_GIT_BINARIES as _TRUSTED_GIT_BINARIES,
-};

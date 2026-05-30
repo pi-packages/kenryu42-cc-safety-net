@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { hasConfigAffectingEnvAssignment, isGitConfigEnvName } from './env';
 import { findDotGitInAncestors, GIT_GLOBAL_OPTS_WITH_VALUE } from './worktree';
 
-export const TRUSTED_GIT_BINARIES = [
+const TRUSTED_GIT_BINARIES = [
   '/usr/bin/git',
   '/usr/local/bin/git',
   '/opt/homebrew/bin/git',
@@ -130,7 +130,7 @@ function getEnvConfigValue(
   return envAssignments?.get(name) ?? process.env[name];
 }
 
-export function effectiveGitConfigEnablesRecursiveSubmodules(
+function effectiveGitConfigEnablesRecursiveSubmodules(
   cwd: string,
   gitBinary: string | null = getTrustedGitBinary(),
 ): boolean {

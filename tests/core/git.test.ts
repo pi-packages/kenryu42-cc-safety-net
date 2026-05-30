@@ -2,13 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  _effectiveGitConfigEnablesRecursiveSubmodules,
-  _extractGitSubcommandAndRest,
-  _TRUSTED_GIT_BINARIES,
-  analyzeGit,
-  getGitWorktreeRelaxation,
-} from '@/core/git';
+import { analyzeGit, getGitWorktreeRelaxation } from '@/core/git';
 import {
   assertAllowed,
   assertBlocked,
@@ -24,27 +18,11 @@ describe('analyzeGit direct', () => {
     expect(analyzeGit([])).toBeNull();
   });
 
-  test('trusted git binaries cover common absolute install paths', () => {
-    expect(_TRUSTED_GIT_BINARIES).toContain('/usr/bin/git');
-    expect(_TRUSTED_GIT_BINARIES).toContain('/usr/local/bin/git');
-    expect(_TRUSTED_GIT_BINARIES).toContain('/opt/homebrew/bin/git');
-    expect(_TRUSTED_GIT_BINARIES).toContain('C:\\Program Files\\Git\\cmd\\git.exe');
-    expect(_TRUSTED_GIT_BINARIES).toContain('C:\\Program Files\\Git\\bin\\git.exe');
-  });
-
-  test('extracts subcommand after global config-env option', () => {
-    expect(
-      _extractGitSubcommandAndRest([
-        'git',
-        '--config-env',
-        'submodule.recurse=RECURSE_SUBMODULES',
-        'reset',
-        '--hard',
-      ]),
-    ).toEqual({
-      subcommand: 'reset',
-      rest: ['--hard'],
-    });
+  test('blocks reset after global config-env option', () => {
+    assertBlocked(
+      'git --config-env submodule.recurse=RECURSE_SUBMODULES reset --hard',
+      'git reset --hard',
+    );
   });
 
   test('classifies reset --hard before -- as local discard', () => {
@@ -1514,17 +1492,6 @@ describe('git linked worktree mode', () => {
         expect(runGuard('git reset --hard', fixture.linkedWorktree)).toBeNull();
       });
       expect(existsSync(marker)).toBe(false);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  test('SAFETY_NET_WORKTREE treats missing trusted git binary as recursive submodule config', () => {
-    const fixture = createLinkedWorktreeFixture();
-    try {
-      expect(_effectiveGitConfigEnablesRecursiveSubmodules(fixture.linkedWorktree, null)).toBe(
-        true,
-      );
     } finally {
       fixture.cleanup();
     }

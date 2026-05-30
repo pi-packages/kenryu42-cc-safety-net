@@ -205,7 +205,7 @@ function analyzeGitSwitch(tokens: readonly string[]): string | null {
   return null;
 }
 
-export function getCheckoutPositionalArgs(tokens: readonly string[]): string[] {
+function getCheckoutPositionalArgs(tokens: readonly string[]): string[] {
   const positional: string[] = [];
 
   let i = 0;

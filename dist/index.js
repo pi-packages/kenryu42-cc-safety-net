@@ -2158,11 +2158,6 @@ function extractDashCArg(tokens) {
   return null;
 }
 
-// src/core/git/config.ts
-import { execFileSync } from "node:child_process";
-import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
-import { dirname as dirname3, isAbsolute as isAbsolute4, join as join2, resolve as resolve3 } from "node:path";
-
 // src/core/git/worktree.ts
 import { existsSync, lstatSync as lstatSync2, readFileSync, realpathSync as realpathSync4, statSync } from "node:fs";
 import { dirname as dirname2, isAbsolute as isAbsolute3, join, resolve as resolve2 } from "node:path";
@@ -2435,279 +2430,6 @@ function findDotGitInAncestors(cwd) {
     }
     current = parent;
   }
-}
-
-// src/core/git/config.ts
-var TRUSTED_GIT_BINARIES = [
-  "/usr/bin/git",
-  "/usr/local/bin/git",
-  "/opt/homebrew/bin/git",
-  "C:\\Program Files\\Git\\cmd\\git.exe",
-  "C:\\Program Files\\Git\\bin\\git.exe"
-];
-function hasRecursiveSubmoduleConfig(tokens, envAssignments, gitCwd) {
-  const commandLineConfig = commandLineRecursiveSubmoduleConfig(tokens, envAssignments);
-  if (commandLineConfig !== null) {
-    return commandLineConfig;
-  }
-  const envConfig = envRecursiveSubmoduleConfig(envAssignments);
-  if (envConfig !== null) {
-    return envConfig;
-  }
-  if (hasConfigAffectingEnvAssignment(envAssignments)) {
-    return true;
-  }
-  return effectiveGitConfigEnablesRecursiveSubmodules(gitCwd);
-}
-function commandLineRecursiveSubmoduleConfig(tokens, envAssignments) {
-  let recursiveSubmoduleConfig = null;
-  let i = 1;
-  while (i < tokens.length) {
-    const token = tokens[i];
-    if (!token || token === "--") {
-      return recursiveSubmoduleConfig;
-    }
-    if (!token.startsWith("-")) {
-      return recursiveSubmoduleConfig;
-    }
-    if (token === "-c") {
-      const configValue = recursiveSubmoduleConfigValue(tokens[i + 1]);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("-c") && token.length > 2) {
-      const configValue = recursiveSubmoduleConfigValue(token.slice(2));
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i++;
-      continue;
-    }
-    if (token === "--config-env") {
-      const configValue = recursiveSubmoduleConfigEnvValue(tokens[i + 1], envAssignments);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i += 2;
-      continue;
-    }
-    if (token.startsWith("--config-env=")) {
-      const configValue = recursiveSubmoduleConfigEnvValue(token.slice("--config-env=".length), envAssignments);
-      if (configValue !== null) {
-        recursiveSubmoduleConfig = configValue;
-      }
-      i++;
-      continue;
-    }
-    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
-      i += 2;
-    } else {
-      i++;
-    }
-  }
-  return recursiveSubmoduleConfig;
-}
-function envRecursiveSubmoduleConfig(envAssignments) {
-  if (getEnvConfigValue("GIT_CONFIG_PARAMETERS", envAssignments) !== undefined) {
-    return true;
-  }
-  const countValue = getEnvConfigValue("GIT_CONFIG_COUNT", envAssignments);
-  if (countValue === undefined) {
-    return null;
-  }
-  const count = Number.parseInt(countValue, 10);
-  if (!Number.isInteger(count) || count < 0) {
-    return true;
-  }
-  let recursiveSubmoduleConfig = null;
-  for (let i = 0;i < count; i++) {
-    const key = getEnvConfigValue(`GIT_CONFIG_KEY_${i}`, envAssignments);
-    if (key?.toLowerCase() !== "submodule.recurse") {
-      continue;
-    }
-    const value = getEnvConfigValue(`GIT_CONFIG_VALUE_${i}`, envAssignments);
-    recursiveSubmoduleConfig = value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
-  }
-  return recursiveSubmoduleConfig;
-}
-function getEnvConfigValue(name, envAssignments) {
-  return envAssignments?.get(name) ?? process.env[name];
-}
-function effectiveGitConfigEnablesRecursiveSubmodules(cwd, gitBinary = getTrustedGitBinary()) {
-  const localConfigResult = localGitConfigEnablesRecursiveSubmodules(cwd);
-  if (localConfigResult === null || localConfigResult) {
-    return true;
-  }
-  if (gitBinary === null) {
-    return true;
-  }
-  try {
-    const value = execFileSync(gitBinary, ["config", "--get", "submodule.recurse"], {
-      cwd,
-      encoding: "utf8",
-      env: withoutGitConfigEnv(process.env),
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return gitConfigValueEnablesRecursiveSubmodules(value);
-  } catch (error) {
-    return !isGitConfigUnsetError(error);
-  }
-}
-function localGitConfigEnablesRecursiveSubmodules(cwd) {
-  const configPaths = getLocalGitConfigPaths(cwd);
-  if (configPaths === null) {
-    return null;
-  }
-  for (const configPath of configPaths) {
-    if (!existsSync2(configPath)) {
-      continue;
-    }
-    const result = gitConfigFileEnablesRecursiveSubmodules(configPath);
-    if (result) {
-      return true;
-    }
-  }
-  return false;
-}
-function getTrustedGitBinary() {
-  for (const gitBinary of TRUSTED_GIT_BINARIES) {
-    if (existsSync2(gitBinary)) {
-      return gitBinary;
-    }
-  }
-  return null;
-}
-function withoutGitConfigEnv(env) {
-  const nextEnv = { ...env };
-  for (const key of Object.keys(nextEnv)) {
-    if (isGitConfigEnvName(key)) {
-      delete nextEnv[key];
-    }
-  }
-  return nextEnv;
-}
-function isGitConfigUnsetError(error) {
-  return typeof error === "object" && error !== null && "status" in error && error.status === 1;
-}
-function getLocalGitConfigPaths(cwd) {
-  const dotGitPath = findDotGitInAncestors(cwd);
-  if (dotGitPath === null) {
-    return null;
-  }
-  const gitDir = resolveGitDirFromDotGit(dotGitPath);
-  if (gitDir === null) {
-    return null;
-  }
-  const commonDir = resolveCommonGitDir(gitDir);
-  if (commonDir === null) {
-    return null;
-  }
-  return [join2(commonDir, "config"), join2(gitDir, "config.worktree")];
-}
-function resolveGitDirFromDotGit(dotGitPath) {
-  try {
-    const content = readFileSync2(dotGitPath, "utf-8");
-    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (!firstLine.startsWith("gitdir:")) {
-      return dotGitPath;
-    }
-    const rawGitDir = firstLine.slice("gitdir:".length).trim();
-    if (rawGitDir === "") {
-      return null;
-    }
-    return isAbsolute4(rawGitDir) ? rawGitDir : resolve3(dirname3(dotGitPath), rawGitDir);
-  } catch {
-    return null;
-  }
-}
-function resolveCommonGitDir(gitDir) {
-  const commonDirPath = join2(gitDir, "commondir");
-  if (!existsSync2(commonDirPath)) {
-    return gitDir;
-  }
-  try {
-    const rawCommonDir = readFileSync2(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (rawCommonDir === "") {
-      return null;
-    }
-    return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve3(gitDir, rawCommonDir);
-  } catch {
-    return null;
-  }
-}
-function gitConfigFileEnablesRecursiveSubmodules(configPath) {
-  let content;
-  try {
-    content = readFileSync2(configPath, "utf-8");
-  } catch {
-    return true;
-  }
-  let section = "";
-  let recursiveSubmoduleConfig = false;
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
-      continue;
-    }
-    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
-    if (sectionMatch) {
-      section = sectionMatch[1]?.trim().toLowerCase() ?? "";
-      continue;
-    }
-    const eqIdx = trimmed.indexOf("=");
-    const key = (eqIdx === -1 ? trimmed : trimmed.slice(0, eqIdx)).trim().toLowerCase();
-    const value = eqIdx === -1 ? "true" : trimmed.slice(eqIdx + 1).trim();
-    if (isIncludeConfigSection(section) && key === "path") {
-      return true;
-    }
-    if (section === "submodule" && key === "recurse") {
-      recursiveSubmoduleConfig = gitConfigValueEnablesRecursiveSubmodules(value);
-    }
-  }
-  return recursiveSubmoduleConfig;
-}
-function isIncludeConfigSection(section) {
-  return section === "include" || section.startsWith("includeif ");
-}
-function recursiveSubmoduleConfigValue(config) {
-  if (!config) {
-    return null;
-  }
-  const eqIdx = config.indexOf("=");
-  const key = (eqIdx === -1 ? config : config.slice(0, eqIdx)).toLowerCase();
-  if (isIncludeConfigKey(key)) {
-    return true;
-  }
-  if (key !== "submodule.recurse") {
-    return null;
-  }
-  const value = eqIdx === -1 ? "true" : config.slice(eqIdx + 1).toLowerCase();
-  return gitConfigValueEnablesRecursiveSubmodules(value);
-}
-function gitConfigValueEnablesRecursiveSubmodules(value) {
-  const normalizedValue = value.toLowerCase();
-  return normalizedValue !== "false" && normalizedValue !== "no" && normalizedValue !== "off" && normalizedValue !== "0";
-}
-function recursiveSubmoduleConfigEnvValue(configEnv, envAssignments) {
-  const eqIdx = configEnv?.indexOf("=") ?? -1;
-  if (!configEnv || eqIdx === -1) {
-    return null;
-  }
-  const key = configEnv.slice(0, eqIdx).toLowerCase();
-  if (isIncludeConfigKey(key)) {
-    return true;
-  }
-  if (key !== "submodule.recurse") {
-    return null;
-  }
-  const value = getEnvConfigValue(configEnv.slice(eqIdx + 1), envAssignments);
-  return value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
-}
-function isIncludeConfigKey(key) {
-  return key === "include.path" || key.startsWith("includeif.") && key.endsWith(".path");
 }
 
 // src/core/git/parse.ts
@@ -3072,6 +2794,282 @@ function analyzeGitWorktree(tokens) {
     return REASON_WORKTREE_REMOVE_FORCE;
   }
   return null;
+}
+
+// src/core/git/config.ts
+import { execFileSync } from "node:child_process";
+import { existsSync as existsSync2, readFileSync as readFileSync2 } from "node:fs";
+import { dirname as dirname3, isAbsolute as isAbsolute4, join as join2, resolve as resolve3 } from "node:path";
+var TRUSTED_GIT_BINARIES = [
+  "/usr/bin/git",
+  "/usr/local/bin/git",
+  "/opt/homebrew/bin/git",
+  "C:\\Program Files\\Git\\cmd\\git.exe",
+  "C:\\Program Files\\Git\\bin\\git.exe"
+];
+function hasRecursiveSubmoduleConfig(tokens, envAssignments, gitCwd) {
+  const commandLineConfig = commandLineRecursiveSubmoduleConfig(tokens, envAssignments);
+  if (commandLineConfig !== null) {
+    return commandLineConfig;
+  }
+  const envConfig = envRecursiveSubmoduleConfig(envAssignments);
+  if (envConfig !== null) {
+    return envConfig;
+  }
+  if (hasConfigAffectingEnvAssignment(envAssignments)) {
+    return true;
+  }
+  return effectiveGitConfigEnablesRecursiveSubmodules(gitCwd);
+}
+function commandLineRecursiveSubmoduleConfig(tokens, envAssignments) {
+  let recursiveSubmoduleConfig = null;
+  let i = 1;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (!token || token === "--") {
+      return recursiveSubmoduleConfig;
+    }
+    if (!token.startsWith("-")) {
+      return recursiveSubmoduleConfig;
+    }
+    if (token === "-c") {
+      const configValue = recursiveSubmoduleConfigValue(tokens[i + 1]);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("-c") && token.length > 2) {
+      const configValue = recursiveSubmoduleConfigValue(token.slice(2));
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i++;
+      continue;
+    }
+    if (token === "--config-env") {
+      const configValue = recursiveSubmoduleConfigEnvValue(tokens[i + 1], envAssignments);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i += 2;
+      continue;
+    }
+    if (token.startsWith("--config-env=")) {
+      const configValue = recursiveSubmoduleConfigEnvValue(token.slice("--config-env=".length), envAssignments);
+      if (configValue !== null) {
+        recursiveSubmoduleConfig = configValue;
+      }
+      i++;
+      continue;
+    }
+    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
+      i += 2;
+    } else {
+      i++;
+    }
+  }
+  return recursiveSubmoduleConfig;
+}
+function envRecursiveSubmoduleConfig(envAssignments) {
+  if (getEnvConfigValue("GIT_CONFIG_PARAMETERS", envAssignments) !== undefined) {
+    return true;
+  }
+  const countValue = getEnvConfigValue("GIT_CONFIG_COUNT", envAssignments);
+  if (countValue === undefined) {
+    return null;
+  }
+  const count = Number.parseInt(countValue, 10);
+  if (!Number.isInteger(count) || count < 0) {
+    return true;
+  }
+  let recursiveSubmoduleConfig = null;
+  for (let i = 0;i < count; i++) {
+    const key = getEnvConfigValue(`GIT_CONFIG_KEY_${i}`, envAssignments);
+    if (key?.toLowerCase() !== "submodule.recurse") {
+      continue;
+    }
+    const value = getEnvConfigValue(`GIT_CONFIG_VALUE_${i}`, envAssignments);
+    recursiveSubmoduleConfig = value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
+  }
+  return recursiveSubmoduleConfig;
+}
+function getEnvConfigValue(name, envAssignments) {
+  return envAssignments?.get(name) ?? process.env[name];
+}
+function effectiveGitConfigEnablesRecursiveSubmodules(cwd, gitBinary = getTrustedGitBinary()) {
+  const localConfigResult = localGitConfigEnablesRecursiveSubmodules(cwd);
+  if (localConfigResult === null || localConfigResult) {
+    return true;
+  }
+  if (gitBinary === null) {
+    return true;
+  }
+  try {
+    const value = execFileSync(gitBinary, ["config", "--get", "submodule.recurse"], {
+      cwd,
+      encoding: "utf8",
+      env: withoutGitConfigEnv(process.env),
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
+    return gitConfigValueEnablesRecursiveSubmodules(value);
+  } catch (error) {
+    return !isGitConfigUnsetError(error);
+  }
+}
+function localGitConfigEnablesRecursiveSubmodules(cwd) {
+  const configPaths = getLocalGitConfigPaths(cwd);
+  if (configPaths === null) {
+    return null;
+  }
+  for (const configPath of configPaths) {
+    if (!existsSync2(configPath)) {
+      continue;
+    }
+    const result = gitConfigFileEnablesRecursiveSubmodules(configPath);
+    if (result) {
+      return true;
+    }
+  }
+  return false;
+}
+function getTrustedGitBinary() {
+  for (const gitBinary of TRUSTED_GIT_BINARIES) {
+    if (existsSync2(gitBinary)) {
+      return gitBinary;
+    }
+  }
+  return null;
+}
+function withoutGitConfigEnv(env) {
+  const nextEnv = { ...env };
+  for (const key of Object.keys(nextEnv)) {
+    if (isGitConfigEnvName(key)) {
+      delete nextEnv[key];
+    }
+  }
+  return nextEnv;
+}
+function isGitConfigUnsetError(error) {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 1;
+}
+function getLocalGitConfigPaths(cwd) {
+  const dotGitPath = findDotGitInAncestors(cwd);
+  if (dotGitPath === null) {
+    return null;
+  }
+  const gitDir = resolveGitDirFromDotGit(dotGitPath);
+  if (gitDir === null) {
+    return null;
+  }
+  const commonDir = resolveCommonGitDir(gitDir);
+  if (commonDir === null) {
+    return null;
+  }
+  return [join2(commonDir, "config"), join2(gitDir, "config.worktree")];
+}
+function resolveGitDirFromDotGit(dotGitPath) {
+  try {
+    const content = readFileSync2(dotGitPath, "utf-8");
+    const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!firstLine.startsWith("gitdir:")) {
+      return dotGitPath;
+    }
+    const rawGitDir = firstLine.slice("gitdir:".length).trim();
+    if (rawGitDir === "") {
+      return null;
+    }
+    return isAbsolute4(rawGitDir) ? rawGitDir : resolve3(dirname3(dotGitPath), rawGitDir);
+  } catch {
+    return null;
+  }
+}
+function resolveCommonGitDir(gitDir) {
+  const commonDirPath = join2(gitDir, "commondir");
+  if (!existsSync2(commonDirPath)) {
+    return gitDir;
+  }
+  try {
+    const rawCommonDir = readFileSync2(commonDirPath, "utf-8").split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (rawCommonDir === "") {
+      return null;
+    }
+    return isAbsolute4(rawCommonDir) ? rawCommonDir : resolve3(gitDir, rawCommonDir);
+  } catch {
+    return null;
+  }
+}
+function gitConfigFileEnablesRecursiveSubmodules(configPath) {
+  let content;
+  try {
+    content = readFileSync2(configPath, "utf-8");
+  } catch {
+    return true;
+  }
+  let section = "";
+  let recursiveSubmoduleConfig = false;
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith(";")) {
+      continue;
+    }
+    const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
+    if (sectionMatch) {
+      section = sectionMatch[1]?.trim().toLowerCase() ?? "";
+      continue;
+    }
+    const eqIdx = trimmed.indexOf("=");
+    const key = (eqIdx === -1 ? trimmed : trimmed.slice(0, eqIdx)).trim().toLowerCase();
+    const value = eqIdx === -1 ? "true" : trimmed.slice(eqIdx + 1).trim();
+    if (isIncludeConfigSection(section) && key === "path") {
+      return true;
+    }
+    if (section === "submodule" && key === "recurse") {
+      recursiveSubmoduleConfig = gitConfigValueEnablesRecursiveSubmodules(value);
+    }
+  }
+  return recursiveSubmoduleConfig;
+}
+function isIncludeConfigSection(section) {
+  return section === "include" || section.startsWith("includeif ");
+}
+function recursiveSubmoduleConfigValue(config) {
+  if (!config) {
+    return null;
+  }
+  const eqIdx = config.indexOf("=");
+  const key = (eqIdx === -1 ? config : config.slice(0, eqIdx)).toLowerCase();
+  if (isIncludeConfigKey(key)) {
+    return true;
+  }
+  if (key !== "submodule.recurse") {
+    return null;
+  }
+  const value = eqIdx === -1 ? "true" : config.slice(eqIdx + 1).toLowerCase();
+  return gitConfigValueEnablesRecursiveSubmodules(value);
+}
+function gitConfigValueEnablesRecursiveSubmodules(value) {
+  const normalizedValue = value.toLowerCase();
+  return normalizedValue !== "false" && normalizedValue !== "no" && normalizedValue !== "off" && normalizedValue !== "0";
+}
+function recursiveSubmoduleConfigEnvValue(configEnv, envAssignments) {
+  const eqIdx = configEnv?.indexOf("=") ?? -1;
+  if (!configEnv || eqIdx === -1) {
+    return null;
+  }
+  const key = configEnv.slice(0, eqIdx).toLowerCase();
+  if (isIncludeConfigKey(key)) {
+    return true;
+  }
+  if (key !== "submodule.recurse") {
+    return null;
+  }
+  const value = getEnvConfigValue(configEnv.slice(eqIdx + 1), envAssignments);
+  return value === undefined || gitConfigValueEnablesRecursiveSubmodules(value);
+}
+function isIncludeConfigKey(key) {
+  return key === "include.path" || key.startsWith("includeif.") && key.endsWith(".path");
 }
 
 // src/core/git/worktree-relaxation.ts

@@ -6,4 +6,3 @@ export interface GitRuleMatch {
 }
 export declare function matchesGitLongOption(token: string, option: string): boolean;
 export declare function analyzeGitRule(tokens: readonly string[]): GitRuleMatch | null;
-export declare function getCheckoutPositionalArgs(tokens: readonly string[]): string[];

@@ -7,6 +7,8 @@ const config: KnipConfig = {
   ignoreIssues: {
     'src/bin/hook/common.ts': ['exports'],
     'src/bin/rule/format.ts': ['exports'],
+    'src/core/analyze/parallel.ts': ['exports'],
+    'src/core/analyze/xargs.ts': ['exports'],
     'src/core/env.ts': ['exports'],
     'src/core/git/env.ts': ['exports'],
     'src/core/rules/policy/index.ts': ['exports', 'types'],

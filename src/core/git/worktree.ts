@@ -334,6 +334,3 @@ export function findDotGitInAncestors(cwd: string): string | null {
     current = parent;
   }
 }
-
-/** @internal Exported for testing */
-export { parseGitConfigValue as _parseGitConfigValue };

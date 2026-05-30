@@ -166,7 +166,3 @@ export function extractXargsChildCommandWithInfo(tokens: readonly string[]): Xar
 
   return { childTokens: [], replacementToken };
 }
-
-export function extractXargsChildCommand(tokens: readonly string[]): string[] {
-  return extractXargsChildCommandWithInfo(tokens).childTokens;
-}

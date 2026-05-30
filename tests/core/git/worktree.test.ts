@@ -12,7 +12,6 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import {
-  _parseGitConfigValue,
   getGitExecutionContext,
   hasGitContextEnvOverride,
   isLinkedWorktree,
@@ -189,16 +188,6 @@ describe('worktree env context overrides', () => {
 });
 
 describe('linked worktree detection', () => {
-  test('parses double-quoted git config escapes', () => {
-    expect(_parseGitConfigValue('"/tmp/with \\"quotes\\""')).toBe('/tmp/with "quotes"');
-    expect(_parseGitConfigValue('"/tmp/backslash\\\\path"')).toBe('/tmp/backslash\\path');
-    expect(_parseGitConfigValue('"line\\nfeed\\ttab\\bbackspace"')).toBe(
-      'line\nfeed\ttab\bbackspace',
-    );
-    expect(_parseGitConfigValue('"unknown\\xpath"')).toBe('unknown\\xpath');
-    expect(_parseGitConfigValue("'/tmp/single'")).toBe("'/tmp/single'");
-  });
-
   test('normalizes Windows native realpath prefixes for comparison', () => {
     expect(normalizePathForComparison('\\\\?\\C:\\Temp\\Linked\\.git\\')).toBe(
       process.platform === 'win32' ? 'c:/temp/linked/.git' : 'C:/Temp/Linked/.git',

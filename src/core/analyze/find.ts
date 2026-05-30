@@ -88,7 +88,7 @@ function getFindExecCommand(tokens: readonly string[], execIndex: number): strin
  * Check if find command has -delete action (not as argument to another option).
  * Handles cases like "find -name -delete" where -delete is a filename pattern.
  */
-export function findHasDelete(tokens: readonly string[]): boolean {
+function findHasDelete(tokens: readonly string[]): boolean {
   let i = 0;
   let insideExec = false;
   let execDepth = 0;
