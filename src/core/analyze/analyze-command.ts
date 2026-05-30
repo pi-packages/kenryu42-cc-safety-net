@@ -134,15 +134,26 @@ function isFailClosedRepairCommand(
   }
 
   if (tokens[0] === 'npx') {
-    return (
-      (tokens[1] === '-y' || tokens[1] === '--yes') &&
-      isCcSafetyNetPackage(tokens[2]) &&
-      tokens[3] === 'rule' &&
-      isRuleSyncArgs(tokens.slice(4))
-    );
+    return (tokens[1] === '-y' || tokens[1] === '--yes') && isPackageRuleSyncRepair(tokens, 2);
+  }
+
+  if (tokens[0] === 'bunx' || tokens[0] === 'pnpx') {
+    return isPackageRuleSyncRepair(tokens, 1);
+  }
+
+  if ((tokens[0] === 'pnpm' || tokens[0] === 'yarn') && tokens[1] === 'dlx') {
+    return isPackageRuleSyncRepair(tokens, 2);
   }
 
   return false;
+}
+
+function isPackageRuleSyncRepair(tokens: string[], packageIndex: number): boolean {
+  return (
+    isCcSafetyNetPackage(tokens[packageIndex]) &&
+    tokens[packageIndex + 1] === 'rule' &&
+    isRuleSyncArgs(tokens.slice(packageIndex + 2))
+  );
 }
 
 function isRuleSyncArgs(args: string[]): boolean {
