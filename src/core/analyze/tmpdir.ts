@@ -56,6 +56,7 @@ function resolveExistingPathComponents(path: string): string {
     if (!existsSync(candidate)) {
       return join(candidate, ...components.slice(i + 1));
     }
+    // This is a best-effort safety check before command execution; symlink targets can race.
     current = lstatSync(candidate).isSymbolicLink() ? realpathSync(candidate) : candidate;
   }
 

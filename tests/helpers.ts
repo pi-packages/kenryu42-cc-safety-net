@@ -144,6 +144,7 @@ export async function runSafetyNetCli(
 export function withStdoutColor<T>(enabled: boolean, fn: () => T): T {
   const originalIsTTY = process.stdout.isTTY;
   const originalNoColor = process.env.NO_COLOR;
+  // This mutates process-global stdout state; keep color assertions single-process.
   Object.defineProperty(process.stdout, 'isTTY', {
     value: enabled,
     writable: true,
