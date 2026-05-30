@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { findCommand, getVisibleCommands } from '@/bin/commands';
+import { runSafetyNetCli } from '../helpers';
 
 describe('command registry', () => {
   describe('findCommand', () => {
@@ -90,5 +91,24 @@ describe('command definitions', () => {
     const flags = cmd?.options.map((opt) => opt.flags);
     expect(flags).toContain('--json');
     expect(flags).toContain('--cwd');
+  });
+});
+
+describe('command routing', () => {
+  test('registered command names route through the CLI dispatcher', async () => {
+    const cases = [
+      { args: ['doctor', '--json', '--skip-update-check'], output: '"hooks"' },
+      { args: ['explain', '--help'], output: 'USAGE:\n  cc-safety-net explain' },
+      { args: ['rule', '--help'], output: 'USAGE:\n  cc-safety-net rule' },
+      { args: ['hook', '--help'], output: 'USAGE:\n  cc-safety-net hook' },
+      { args: ['statusline'], output: 'USAGE:\n  cc-safety-net statusline', exitCode: 1 },
+    ];
+
+    for (const command of cases) {
+      const result = await runSafetyNetCli(command.args);
+
+      expect(result.exitCode).toBe(command.exitCode ?? 0);
+      expect(result.output).toContain(command.output);
+    }
   });
 });
