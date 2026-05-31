@@ -301,10 +301,6 @@ function isOnlyParallelPlaceholder(token: string): boolean {
 function parseParallelCommand(tokens: readonly string[]): ParallelParseResult | null {
   // Options that take a value as the next token
   const parallelOptsWithValue = new Set([
-    '-S',
-    '--sshlogin',
-    '--slf',
-    '--sshloginfile',
     '-a',
     '--arg-file',
     '--colsep',
