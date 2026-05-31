@@ -213,7 +213,12 @@ export function analyzeSegment(
 }
 
 function isShellWrapperCommand(head: string, normalizedHead: string): boolean {
-  return SHELL_WRAPPERS.has(normalizedHead) || head === '$SHELL';
+  // shell-quote ENV_PROXY preserves $SHELL today; keep basename fallback for proxy changes.
+  return (
+    SHELL_WRAPPERS.has(normalizedHead) ||
+    head === '$SHELL' ||
+    SHELL_WRAPPERS.has(getBasename(normalizedHead))
+  );
 }
 
 function getCommandAnalyzer(context: CommandAnalysisContext): CommandAnalyzer | undefined {
