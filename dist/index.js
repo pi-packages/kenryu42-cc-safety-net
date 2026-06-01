@@ -221,7 +221,7 @@ function dangerousInText(text) {
   const isEchoOrRg = stripped.startsWith("echo ") || stripped.startsWith("rg ");
   const patterns = [
     {
-      regex: /\brm\s+(-[^\s]*r[^\s]*\s+-[^\s]*f|-[^\s]*f[^\s]*\s+-[^\s]*r|-[^\s]*rf|-[^\s]*fr)\b/,
+      regex: /(^|[^\w])\\?r\\?m\s+(-[^\s]*r[^\s]*\s+-[^\s]*f|-[^\s]*f[^\s]*\s+-[^\s]*r|-[^\s]*rf|-[^\s]*fr)\b/,
       reason: "rm -rf"
     },
     {
@@ -604,12 +604,16 @@ function hasUnclosedQuotes(command) {
   let inSingle = false;
   let inDouble = false;
   let escaped = false;
-  for (const char of command) {
+  for (let i = 0;i < command.length; i++) {
+    const char = command[i];
     if (escaped) {
       escaped = false;
       continue;
     }
-    if (char === "\\") {
+    if (char === "#" && !inSingle && !inDouble && startsShellComment(command, i)) {
+      break;
+    }
+    if (char === "\\" && !inSingle) {
       escaped = true;
       continue;
     }
@@ -620,6 +624,9 @@ function hasUnclosedQuotes(command) {
     }
   }
   return inSingle || inDouble;
+}
+function startsShellComment(command, index) {
+  return index === 0 || /\s/.test(command[index - 1] ?? "");
 }
 function getCommandTokenText(token) {
   if (typeof token === "string") {
@@ -1802,7 +1809,11 @@ function analyzeFind(tokens, context = {}) {
   for (let i = 0;i < tokens.length; i++) {
     const token = tokens[i];
     if (token === "-exec" || token === "-execdir") {
-      let execCommand = getFindExecCommand(tokens, i);
+      const execCommand = getFindExecCommand(tokens, i);
+      const directReason = analyzeFindExecCommand(execCommand);
+      if (directReason) {
+        return directReason;
+      }
       if (context.analyzeTokens) {
         const reason = context.analyzeTokens(execCommand, token === "-execdir" ? null : context.cwd);
         if (reason) {
@@ -1820,18 +1831,25 @@ function analyzeFind(tokens, context = {}) {
         }
         continue;
       }
-      execCommand = stripWrappers(execCommand);
-      if (execCommand.length > 0) {
-        let head = getBasename(execCommand[0] ?? "");
-        if (head === "busybox" && execCommand.length > 1) {
-          execCommand = execCommand.slice(1);
-          head = getBasename(execCommand[0] ?? "");
-        }
-        if (head === "rm" && hasRecursiveForceFlags(execCommand)) {
-          return "find -exec rm -rf is dangerous. Use explicit file list instead.";
-        }
-      }
+      const fallbackReason = analyzeFindExecCommand(execCommand);
+      if (fallbackReason)
+        return fallbackReason;
     }
+  }
+  return null;
+}
+function analyzeFindExecCommand(tokens) {
+  let execCommand = stripWrappers([...tokens]);
+  if (execCommand.length === 0) {
+    return null;
+  }
+  let head = getBasename(execCommand[0] ?? "");
+  if (head === "busybox" && execCommand.length > 1) {
+    execCommand = execCommand.slice(1);
+    head = getBasename(execCommand[0] ?? "");
+  }
+  if (head === "rm" && hasRecursiveForceFlags(execCommand)) {
+    return "find -exec rm -rf is dangerous. Use explicit file list instead.";
   }
   return null;
 }
@@ -1892,6 +1910,9 @@ function extractInterpreterCodeArg(tokens) {
     if (!token)
       continue;
     if ((token === "-c" || token === "-e") && tokens[i + 1]) {
+      return tokens[i + 1] ?? null;
+    }
+    if (token.startsWith("-") && !token.startsWith("--") && (token.includes("c") || token.includes("e")) && tokens[i + 1]) {
       return tokens[i + 1] ?? null;
     }
   }

@@ -437,6 +437,15 @@ describe('rm -rf cwd-aware', () => {
     }
   });
 
+  test('escaped rm with comment quote blocked in default mode', () => {
+    setup();
+    try {
+      assertBlocked("r\\m -rf / #'", 'rm -rf', tmpDir);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('rm -rf strict mode allows within cwd', () => {
     setup();
     try {
