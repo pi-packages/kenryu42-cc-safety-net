@@ -65,7 +65,12 @@ export function analyzeFind(
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token === '-exec' || token === '-execdir') {
-      let execCommand = getFindExecCommand(tokens, i);
+      const execCommand = getFindExecCommand(tokens, i);
+      const directReason = analyzeFindExecCommand(execCommand);
+      if (directReason) {
+        return directReason;
+      }
+
       if (context.analyzeTokens) {
         const reason = context.analyzeTokens(
           execCommand,
@@ -88,20 +93,28 @@ export function analyzeFind(
         continue;
       }
 
-      // Strip wrappers (env, sudo, command)
-      execCommand = stripWrappers(execCommand);
-      if (execCommand.length > 0) {
-        let head = getBasename(execCommand[0] ?? '');
-        // Handle busybox wrapper
-        if (head === 'busybox' && execCommand.length > 1) {
-          execCommand = execCommand.slice(1);
-          head = getBasename(execCommand[0] ?? '');
-        }
-        if (head === 'rm' && hasRecursiveForceFlags(execCommand)) {
-          return 'find -exec rm -rf is dangerous. Use explicit file list instead.';
-        }
-      }
+      const fallbackReason = analyzeFindExecCommand(execCommand);
+      if (fallbackReason) return fallbackReason;
     }
+  }
+
+  return null;
+}
+
+function analyzeFindExecCommand(tokens: readonly string[]): string | null {
+  let execCommand = stripWrappers([...tokens]);
+  if (execCommand.length === 0) {
+    return null;
+  }
+
+  let head = getBasename(execCommand[0] ?? '');
+  if (head === 'busybox' && execCommand.length > 1) {
+    execCommand = execCommand.slice(1);
+    head = getBasename(execCommand[0] ?? '');
+  }
+
+  if (head === 'rm' && hasRecursiveForceFlags(execCommand)) {
+    return 'find -exec rm -rf is dangerous. Use explicit file list instead.';
   }
 
   return null;
