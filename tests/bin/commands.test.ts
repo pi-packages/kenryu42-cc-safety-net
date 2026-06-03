@@ -123,7 +123,7 @@ describe('command routing', () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain(
-      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode',
+      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-cli',
     );
     expect(result.output).toContain('USAGE:\n  cc-safety-net hook');
   });

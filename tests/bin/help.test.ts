@@ -235,9 +235,10 @@ ENVIRONMENT VARIABLES:
       expect(output).toContain('-kc, --kimi-cli');
       expect(output).toContain('cc-safety-net hook --claude-code');
       expect(output).toContain('cc-safety-net hook --kimi-cli');
-      expect(output).toContain('install --opencode');
+      expect(output).toContain('install --kimi-cli');
       expect(output).toContain('uninstall --kimi-cli');
-      expect(output).toContain('cc-safety-net hook uninstall --opencode');
+      expect(output).not.toContain('install --opencode');
+      expect(output).not.toContain('uninstall --opencode');
     });
 
     test('statusline command prints Claude Code platform flag', () => {
