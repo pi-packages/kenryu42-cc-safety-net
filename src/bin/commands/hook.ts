@@ -15,9 +15,7 @@ export const hookCommand = {
   description: 'Run as an agent CLI hook (reads JSON from stdin)',
   usage: 'hook <coding cli>',
   subcommands: [
-    { usage: 'install --opencode', description: 'Install OpenCode hook config' },
     { usage: 'install --kimi-cli', description: 'Install Kimi CLI hook config' },
-    { usage: 'uninstall --opencode', description: 'Uninstall OpenCode hook config' },
     { usage: 'uninstall --kimi-cli', description: 'Uninstall Kimi CLI hook config' },
   ],
   options: [
@@ -27,5 +25,5 @@ export const hookCommand = {
       description: 'Show this help',
     },
   ],
-  examples: [...platformExamples, 'cc-safety-net hook uninstall --opencode'],
+  examples: [...platformExamples, 'cc-safety-net hook install --kimi-cli'],
 } satisfies Command;

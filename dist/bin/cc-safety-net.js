@@ -6480,9 +6480,7 @@ var hookCommand = {
   description: "Run as an agent CLI hook (reads JSON from stdin)",
   usage: "hook <coding cli>",
   subcommands: [
-    { usage: "install --opencode", description: "Install OpenCode hook config" },
     { usage: "install --kimi-cli", description: "Install Kimi CLI hook config" },
-    { usage: "uninstall --opencode", description: "Uninstall OpenCode hook config" },
     { usage: "uninstall --kimi-cli", description: "Uninstall Kimi CLI hook config" }
   ],
   options: [
@@ -6492,7 +6490,7 @@ var hookCommand = {
       description: "Show this help"
     }
   ],
-  examples: [...platformExamples, "cc-safety-net hook uninstall --opencode"]
+  examples: [...platformExamples, "cc-safety-net hook install --kimi-cli"]
 };
 
 // src/bin/commands/rule.ts
@@ -9132,19 +9130,6 @@ import { dirname as dirname9, join as join11 } from "node:path";
 function isWhitespace(char) {
   return char !== undefined && /\s/.test(char);
 }
-function skipWhitespace(content, index) {
-  let current = index;
-  while (isWhitespace(content[current]))
-    current++;
-  return current;
-}
-function skipWhitespaceAndComments(content, index) {
-  const whitespaceEnd = skipWhitespace(content, index);
-  const commentEnd = skipJsonComment(content, whitespaceEnd);
-  if (commentEnd === whitespaceEnd)
-    return whitespaceEnd;
-  return skipWhitespaceAndComments(content, commentEnd);
-}
 function skipString(content, index, errorMessage) {
   let current = index + 1;
   let isEscaped = false;
@@ -9165,20 +9150,6 @@ function skipString(content, index, errorMessage) {
     current++;
   }
   throw new Error(errorMessage);
-}
-function skipJsonComment(content, index) {
-  if (content[index] === "/" && content[index + 1] === "/") {
-    const newlineIndex = content.indexOf(`
-`, index + 2);
-    return newlineIndex === -1 ? content.length : newlineIndex;
-  }
-  if (content[index] === "/" && content[index + 1] === "*") {
-    const endIndex = content.indexOf("*/", index + 2);
-    if (endIndex === -1)
-      throw new Error("Unterminated comment in OpenCode config");
-    return endIndex + 2;
-  }
-  return index;
 }
 function findMatchingBracket(content, openIndex, options2) {
   const open = content[openIndex];
@@ -9275,7 +9246,7 @@ function skipTomlComment(content, index) {
 function findTomlArrayClose(content, openIndex) {
   return findMatchingBracket(content, openIndex, {
     skipComment: skipTomlComment,
-    stringError: "Unterminated string in OpenCode config",
+    stringError: "Unterminated string in Kimi CLI config",
     bracketError: "Unmatched hooks array in Kimi CLI config"
   });
 }
@@ -9363,200 +9334,26 @@ function uninstallKimiCli(homeDir) {
   return { path: configPath, alreadyInstalled: true };
 }
 
-// src/bin/hook/install/opencode.ts
-import { existsSync as existsSync16, mkdirSync as mkdirSync5, readFileSync as readFileSync12, writeFileSync as writeFileSync4 } from "node:fs";
-import { dirname as dirname10, join as join12 } from "node:path";
-var OPENCODE_PLUGIN = "cc-safety-net@latest";
-function getOpenCodeConfigDir(homeDir) {
-  return process.env.OPENCODE_CONFIG_DIR ?? join12(process.env.XDG_CONFIG_HOME ?? join12(homeDir, ".config"), "opencode");
-}
-function getOpenCodeConfigPath(homeDir) {
-  const configDir = getOpenCodeConfigDir(homeDir);
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) => join12(configDir, file));
-  return candidates.find((path) => existsSync16(path)) ?? join12(configDir, "opencode.jsonc");
-}
-function findOpenCodeBracket(content, openIndex) {
-  return findMatchingBracket(content, openIndex, {
-    skipComment: skipJsonComment,
-    stringError: "Unterminated string in OpenCode config",
-    bracketError: "Unmatched bracket in OpenCode config"
-  });
-}
-function findTopLevelPropertyValue(content, propertyName) {
-  const rootStart = skipWhitespaceAndComments(content, 0);
-  if (content[rootStart] !== "{")
-    throw new Error("OpenCode config must be a JSON object");
-  let depth = 0;
-  let index = rootStart;
-  while (index < content.length) {
-    const nextIndex = skipJsonComment(content, index);
-    if (nextIndex !== index) {
-      index = nextIndex;
-      continue;
-    }
-    if (content[index] === '"') {
-      const endIndex = skipString(content, index, "Unterminated string in OpenCode config");
-      const colonIndex = skipWhitespace(content, endIndex);
-      if (depth === 1 && content[colonIndex] === ":" && content.slice(index, endIndex) === JSON.stringify(propertyName)) {
-        return skipWhitespace(content, colonIndex + 1);
-      }
-      index = endIndex;
-      continue;
-    }
-    if (content[index] === "{" || content[index] === "[")
-      depth++;
-    if (content[index] === "}" || content[index] === "]")
-      depth--;
-    index++;
-  }
-  return;
-}
-function findOpenCodePluginArray(content) {
-  const arrayStart = findTopLevelPropertyValue(content, "plugin");
-  if (arrayStart === undefined)
-    return;
-  if (content[arrayStart] !== "[")
-    throw new Error("OpenCode plugin must be an array");
-  return { start: arrayStart, end: findOpenCodeBracket(content, arrayStart) };
-}
-function insertOpenCodePlugin(content, pluginRange, plugins) {
-  const closingIndent = getLineIndent(content, pluginRange.end);
-  const itemIndent = `${closingIndent}  `;
-  if (plugins.length === 0) {
-    return `${content.slice(0, pluginRange.start + 1)}
-${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
-${closingIndent}${content.slice(pluginRange.end)}`;
-  }
-  const beforeClose = content.slice(0, pluginRange.end).trimEnd();
-  const separator = beforeClose.endsWith(",") ? `
-` : `,
-`;
-  return `${beforeClose}${separator}${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}${content.slice(pluginRange.end)}`;
-}
-function parseOpenCodePluginItems(content, pluginRange) {
-  const items = [];
-  let index = pluginRange.start + 1;
-  while (index < pluginRange.end) {
-    const nextIndex = skipJsonComment(content, index);
-    if (nextIndex !== index) {
-      index = nextIndex;
-      continue;
-    }
-    if (content[index] !== '"') {
-      index++;
-      continue;
-    }
-    const endIndex = skipString(content, index, "Unterminated string in OpenCode config");
-    const value = JSON.parse(content.slice(index, endIndex));
-    items.push({ value, start: index, end: endIndex });
-    index = endIndex;
-  }
-  return items;
-}
-function removeOpenCodePlugin(content, pluginRange) {
-  return parseOpenCodePluginItems(content, pluginRange).filter((plugin) => isManagedOpenCodePlugin(plugin.value)).reverse().reduce((updated, plugin) => removeArrayRangeItem(updated, plugin), content);
-}
-function findRootObjectClose(content) {
-  return findOpenCodeBracket(content, skipWhitespaceAndComments(content, 0));
-}
-function addOpenCodePluginProperty(content, propertyCount) {
-  const rootClose = findRootObjectClose(content);
-  const closingIndent = getLineIndent(content, rootClose);
-  const propertyIndent = `${closingIndent}  `;
-  const itemIndent = `${propertyIndent}  `;
-  const propertyText = `${propertyIndent}"plugin": [
-${itemIndent}${JSON.stringify(OPENCODE_PLUGIN)}
-${propertyIndent}]`;
-  if (propertyCount === 0) {
-    return `${content.slice(0, rootClose)}${propertyText}
-${closingIndent}${content.slice(rootClose)}`;
-  }
-  const beforeClose = content.slice(0, rootClose).trimEnd();
-  return `${beforeClose},
-${propertyText}
-${closingIndent}${content.slice(rootClose)}`;
-}
-function parseOpenCodeConfig(content, configPath) {
-  try {
-    return JSON.parse(stripJsonComments(content));
-  } catch (e) {
-    throw new Error(`Failed to parse ${configPath}: ${e instanceof Error ? e.message : String(e)}`);
-  }
-}
-function isManagedOpenCodePlugin(plugin) {
-  return typeof plugin === "string" && (plugin === "cc-safety-net" || plugin.startsWith("cc-safety-net@"));
-}
-function readOpenCodeConfig(configPath) {
-  const content = readFileSync12(configPath, "utf-8");
-  const config = parseOpenCodeConfig(content, configPath);
-  const plugins = config.plugin;
-  if (plugins !== undefined && !Array.isArray(plugins)) {
-    throw new Error("OpenCode plugin must be an array");
-  }
-  return { content, config, plugins };
-}
-function installOpenCode(homeDir) {
-  const configPath = getOpenCodeConfigPath(homeDir);
-  mkdirSync5(dirname10(configPath), { recursive: true });
-  if (!existsSync16(configPath)) {
-    writeFileSync4(configPath, `${JSON.stringify({ plugin: [OPENCODE_PLUGIN] }, null, 2)}
-`);
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const opencode = readOpenCodeConfig(configPath);
-  if (opencode.plugins?.some(isManagedOpenCodePlugin)) {
-    return { path: configPath, alreadyInstalled: true };
-  }
-  if (opencode.plugins === undefined) {
-    writeFileSync4(configPath, addOpenCodePluginProperty(opencode.content, Object.keys(opencode.config).length));
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const pluginRange = findOpenCodePluginArray(opencode.content);
-  if (!pluginRange)
-    throw new Error("OpenCode plugin property was not found");
-  writeFileSync4(configPath, insertOpenCodePlugin(opencode.content, pluginRange, opencode.plugins));
-  return { path: configPath, alreadyInstalled: false };
-}
-function uninstallOpenCode(homeDir) {
-  const configPath = getOpenCodeConfigPath(homeDir);
-  if (!existsSync16(configPath))
-    return { path: configPath, alreadyInstalled: false };
-  const opencode = readOpenCodeConfig(configPath);
-  if (!opencode.plugins?.some(isManagedOpenCodePlugin)) {
-    return { path: configPath, alreadyInstalled: false };
-  }
-  const pluginRange = findOpenCodePluginArray(opencode.content);
-  if (!pluginRange)
-    throw new Error("OpenCode plugin property was not found");
-  writeFileSync4(configPath, removeOpenCodePlugin(opencode.content, pluginRange));
-  return { path: configPath, alreadyInstalled: true };
-}
-
 // src/bin/hook/install.ts
 function getHomeDir() {
   return process.env.HOME ?? homedir6();
 }
 function parseInstallTarget(args, action) {
-  const targets = [
-    args.includes("--opencode") ? "opencode" : undefined,
-    args.includes("--kimi-cli") ? "kimi-cli" : undefined
-  ].filter((target) => target !== undefined);
-  const unknownOption = args.find((arg) => arg.startsWith("-") && !["--opencode", "--kimi-cli"].includes(arg));
+  const unknownOption = args.find((arg) => arg.startsWith("-") && !["--kimi-cli"].includes(arg));
   if (unknownOption)
     throw new Error(`Unknown install option: ${unknownOption}`);
   const unexpectedArg = args.find((arg) => !arg.startsWith("-"));
   if (unexpectedArg)
     throw new Error(`Unexpected argument for hook ${action}: ${unexpectedArg}`);
-  if (targets.length !== 1)
-    throw new Error("Choose exactly one install target: --opencode or --kimi-cli");
-  return targets[0];
+  if (!args.includes("--kimi-cli"))
+    throw new Error("Choose exactly one install target: --kimi-cli");
 }
 function runHookInstallCommand(action, args) {
   try {
-    const target = parseInstallTarget(args, action);
+    parseInstallTarget(args, action);
     const homeDir = getHomeDir();
-    const result = target === "opencode" ? action === "install" ? installOpenCode(homeDir) : uninstallOpenCode(homeDir) : action === "install" ? installKimiCli(homeDir) : uninstallKimiCli(homeDir);
-    const name = target === "opencode" ? "OpenCode" : "Kimi CLI";
+    const result = action === "install" ? installKimiCli(homeDir) : uninstallKimiCli(homeDir);
+    const name = "Kimi CLI";
     const pastTense = action === "install" ? "Installed" : "Uninstalled";
     console.log(action === "install" && result.alreadyInstalled ? `${name} hook already installed in ${result.path}` : action === "uninstall" && !result.alreadyInstalled ? `${name} hook not installed in ${result.path}` : `${pastTense} ${name} hook ${action === "install" ? "in" : "from"} ${result.path}`);
     return 0;
@@ -9584,8 +9381,8 @@ Check that every parent path component is a directory.`;
 }
 
 // src/bin/rule/index.ts
-import { existsSync as existsSync19 } from "node:fs";
-import { join as join15 } from "node:path";
+import { existsSync as existsSync18 } from "node:fs";
+import { join as join14 } from "node:path";
 
 // src/bin/rule/doc.ts
 var RULE_DOC = `# Custom Rules Reference
@@ -9826,8 +9623,8 @@ function printResultWarnings(result) {
 }
 
 // src/bin/rule/migrate.ts
-import { existsSync as existsSync17, readFileSync as readFileSync13, rmSync as rmSync2, writeFileSync as writeFileSync5 } from "node:fs";
-import { dirname as dirname11, join as join13 } from "node:path";
+import { existsSync as existsSync16, readFileSync as readFileSync12, rmSync as rmSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { dirname as dirname10, join as join12 } from "node:path";
 var PROJECT_MIGRATED_FROM = ".safety-net.json";
 var USER_MIGRATED_FROM = "~/.cc-safety-net/config.json";
 async function runRulesMigrate(options2) {
@@ -9852,7 +9649,7 @@ async function runRulesMigrate(options2) {
   return results.every((result) => result) ? 0 : 1;
 }
 async function migrateRulesScope(options2) {
-  if (!existsSync17(options2.legacyPath)) {
+  if (!existsSync16(options2.legacyPath)) {
     console.log(`No legacy config found at ${options2.legacyPath}`);
     return true;
   }
@@ -9869,8 +9666,8 @@ async function migrateRulesScope(options2) {
     return false;
   }
   const config = loaded.config ?? { version: 1, rules: [], overrides: {} };
-  const rulebookName = getMigratedRulebookName(dirname11(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
-  const rulebookPath = join13(dirname11(options2.configPath), rulebookName, "rulebook.json");
+  const rulebookName = getMigratedRulebookName(dirname10(options2.configPath), config.rules, options2.defaultRulebookName, options2.migratedFrom);
+  const rulebookPath = join12(dirname10(options2.configPath), rulebookName, "rulebook.json");
   const snapshots = [
     snapshotFile(options2.configPath),
     snapshotFile(rulebookPath),
@@ -9910,7 +9707,7 @@ async function writeAndSyncMigratedRulebook(options2, rulebookPath, rulebookName
 }
 function readLegacyRulesConfig(path) {
   try {
-    const parsed = JSON.parse(readFileSync13(path, "utf-8"));
+    const parsed = JSON.parse(readFileSync12(path, "utf-8"));
     const validation = validateConfig(parsed);
     if (validation.errors.length > 0)
       return { ok: false, errors: validation.errors };
@@ -9932,11 +9729,11 @@ function getMigratedRulebookName(configDir, sources, defaultRulebookName, migrat
   const existing = sources.find((source) => getRulebookMigratedFrom(configDir, source) === migratedFrom);
   if (existing)
     return existing;
-  if (!existsSync17(join13(configDir, defaultRulebookName, "rulebook.json")))
+  if (!existsSync16(join12(configDir, defaultRulebookName, "rulebook.json")))
     return defaultRulebookName;
   for (let i = 2;; i++) {
     const name = `${defaultRulebookName}-${i}`;
-    if (!existsSync17(join13(configDir, name, "rulebook.json")))
+    if (!existsSync16(join12(configDir, name, "rulebook.json")))
       return name;
   }
 }
@@ -9959,17 +9756,17 @@ function getMigratedRulebook(name, migratedFrom, rules) {
 }
 function isCleanupVerified(configPath, rulebookPath, rulebookName, migratedFrom, legacyRules) {
   const config = readRulesConfig(configPath).config;
-  if (!config?.rules.includes(rulebookName) || !existsSync17(rulebookPath))
+  if (!config?.rules.includes(rulebookName) || !existsSync16(rulebookPath))
     return false;
   try {
-    const rulebook = JSON.parse(readFileSync13(rulebookPath, "utf-8"));
+    const rulebook = JSON.parse(readFileSync12(rulebookPath, "utf-8"));
     return rulebook.migrated_from === migratedFrom && JSON.stringify(rulebook.rules) === JSON.stringify(legacyRules);
   } catch {
     return false;
   }
 }
 function snapshotFile(path) {
-  return { path, content: existsSync17(path) ? readFileSync13(path, "utf-8") : null };
+  return { path, content: existsSync16(path) ? readFileSync12(path, "utf-8") : null };
 }
 function restoreFiles(snapshots) {
   for (const snapshot of snapshots) {
@@ -9977,13 +9774,13 @@ function restoreFiles(snapshots) {
       rmSync2(snapshot.path, { force: true });
       continue;
     }
-    writeFileSync5(snapshot.path, snapshot.content, "utf-8");
+    writeFileSync4(snapshot.path, snapshot.content, "utf-8");
   }
 }
 
 // src/bin/rule/verify.ts
-import { existsSync as existsSync18, readdirSync as readdirSync4, readFileSync as readFileSync14, statSync as statSync2, writeFileSync as writeFileSync6 } from "node:fs";
-import { dirname as dirname12, join as join14, resolve as resolve9 } from "node:path";
+import { existsSync as existsSync17, readdirSync as readdirSync4, readFileSync as readFileSync13, statSync as statSync2, writeFileSync as writeFileSync5 } from "node:fs";
+import { dirname as dirname11, join as join13, resolve as resolve9 } from "node:path";
 var VERIFY_HEADER = "CC Safety Net Config";
 var VERIFY_SEPARATOR = "═".repeat(VERIFY_HEADER.length);
 var RULES_SCHEMA_URL = "https://raw.githubusercontent.com/kenryu42/claude-code-safety-net/main/assets/cc-safety-net.schema.json";
@@ -9995,14 +9792,14 @@ function runRulesVerify(options2 = {}) {
   const legacyUserConfig = options2.legacyUserConfigPath ?? getLegacyUserRulesConfigPath();
   const legacyProjectConfig = options2.legacyProjectConfigPath ?? getLegacyProjectConfigPath(cwd);
   const githubSourceRulesDir = resolve9(cwd, RULES_DIR);
-  const userConfigDir = dirname12(userConfig);
+  const userConfigDir = dirname11(userConfig);
   let hasErrors = false;
   let hasWarnings = false;
   const configsChecked = [];
   const warnings = [];
   const githubSourceRules = getGitHubSourceRulesValidation(githubSourceRulesDir);
   printRulesVerifyHeader();
-  if (existsSync18(userConfig)) {
+  if (existsSync17(userConfig)) {
     const result = validateRulesConfigFile(userConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(userConfig, getUserRulesLockPath({ userConfigDir }), {
       userConfigDir
@@ -10017,9 +9814,9 @@ function runRulesVerify(options2 = {}) {
     if (result.errors.length > 0)
       hasErrors = true;
   }
-  if (existsSync18(legacyUserConfig)) {
+  if (existsSync17(legacyUserConfig)) {
     hasWarnings = true;
-    if (existsSync18(userConfig)) {
+    if (existsSync17(userConfig)) {
       warnings.push(getLegacyRulesConfigWarning("user", "cleanup"));
     } else {
       const result = validateConfigFile(legacyUserConfig);
@@ -10035,7 +9832,7 @@ function runRulesVerify(options2 = {}) {
       warnings.push(getLegacyRulesConfigWarning("user", result.errors.length > 0 ? "fix-or-delete" : "migrate"));
     }
   }
-  if (existsSync18(projectConfig)) {
+  if (existsSync17(projectConfig)) {
     const result = validateRulesConfigFile(projectConfig);
     result.errors.push(...getRulesConfigRuntimeErrorsForConfig(projectConfig, getRulesLockPathForConfigPath(projectConfig), {
       userConfigDir
@@ -10049,11 +9846,11 @@ function runRulesVerify(options2 = {}) {
     });
     if (result.errors.length > 0)
       hasErrors = true;
-    if (existsSync18(legacyProjectConfig)) {
+    if (existsSync17(legacyProjectConfig)) {
       hasWarnings = true;
       warnings.push(getLegacyRulesConfigWarning("project", "cleanup"));
     }
-  } else if (existsSync18(legacyProjectConfig)) {
+  } else if (existsSync17(legacyProjectConfig)) {
     hasWarnings = true;
     hasErrors = true;
     const result = validateConfigFile(legacyProjectConfig);
@@ -10118,7 +9915,7 @@ function getLegacyRulesConfigWarning(scope, action) {
   return `Warning: Legacy ${scope} config is no longer supported. Fix or delete the ${label}, then run \`npx -y cc-safety-net rule migrate\`.`;
 }
 function getGitHubSourceRulesValidation(path) {
-  if (!existsSync18(path))
+  if (!existsSync17(path))
     return null;
   const result = validateGitHubSourceRules(path);
   if (result.ruleNames.size === 0 && result.errors.length === 0)
@@ -10153,13 +9950,13 @@ function validateGitHubSourceRules(path) {
       errors.push(`${entry.name} must be a rulebook directory`);
       continue;
     }
-    const rulebookPath = join14(path, entry.name, "rulebook.json");
-    if (!existsSync18(rulebookPath)) {
+    const rulebookPath = join13(path, entry.name, "rulebook.json");
+    if (!existsSync17(rulebookPath)) {
       errors.push(`${entry.name}/rulebook.json is required`);
       continue;
     }
     try {
-      const rulebook = assertValidRulebook(JSON.parse(readFileSync14(rulebookPath, "utf-8")));
+      const rulebook = assertValidRulebook(JSON.parse(readFileSync13(rulebookPath, "utf-8")));
       if (rulebook.name !== entry.name) {
         errors.push(`rulebook name "${rulebook.name}" must match folder "${entry.name}"`);
         continue;
@@ -10247,11 +10044,11 @@ function printInvalidVerifyTarget(label, path, errors) {
 }
 function addRulesSchemaIfMissing(path) {
   try {
-    const content = readFileSync14(path, "utf-8");
+    const content = readFileSync13(path, "utf-8");
     const parsed = JSON.parse(content);
     if (parsed.$schema)
       return false;
-    writeFileSync6(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
+    writeFileSync5(path, JSON.stringify({ $schema: RULES_SCHEMA_URL, ...parsed }, null, 2), "utf-8");
     return true;
   } catch {
     return false;
@@ -10294,8 +10091,8 @@ async function runRuleCommand(args) {
     const configPath = flags.global ? getUserRulesConfigPath() : getProjectRulesConfigPath();
     const rulebookName = flags.global ? "user-rules" : "project-rules";
     ensureDefaultRulebookSource(configPath, rulebookName);
-    const rulebookPath = join15(dir, rulebookName, "rulebook.json");
-    if (!existsSync19(rulebookPath))
+    const rulebookPath = join14(dir, rulebookName, "rulebook.json");
+    if (!existsSync18(rulebookPath))
       writeStarterRulebook(rulebookPath, rulebookName);
     const result = await syncRulesConfig(options2);
     printRuleChangeResult(result, "Rule config initialized.");
@@ -10422,7 +10219,7 @@ function unknownRuleOption(subcommand, option) {
   return `Unknown rule option: ${option}`;
 }
 function ensureDefaultRulebookSource(configPath, rulebookName) {
-  if (!existsSync19(configPath)) {
+  if (!existsSync18(configPath)) {
     writeDefaultRulesConfig(configPath, [rulebookName]);
     return;
   }
@@ -10437,9 +10234,9 @@ function ensureDefaultRulebookSource(configPath, rulebookName) {
 }
 
 // src/bin/statusline.ts
-import { existsSync as existsSync20, readFileSync as readFileSync15 } from "node:fs";
+import { existsSync as existsSync19, readFileSync as readFileSync14 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
-import { join as join16 } from "node:path";
+import { join as join15 } from "node:path";
 async function readStdinAsync() {
   if (process.stdin.isTTY) {
     return null;
@@ -10463,15 +10260,15 @@ function getSettingsPath() {
   if (process.env.CLAUDE_SETTINGS_PATH) {
     return process.env.CLAUDE_SETTINGS_PATH;
   }
-  return join16(homedir7(), ".claude", "settings.json");
+  return join15(homedir7(), ".claude", "settings.json");
 }
 function isPluginEnabled() {
   const settingsPath = getSettingsPath();
-  if (!existsSync20(settingsPath)) {
+  if (!existsSync19(settingsPath)) {
     return false;
   }
   try {
-    const content = readFileSync15(settingsPath, "utf-8");
+    const content = readFileSync14(settingsPath, "utf-8");
     const settings = JSON.parse(content);
     if (!settings.enabledPlugins) {
       return false;
@@ -10573,7 +10370,7 @@ var commandParsers = {
     const integration = findHookIntegrationByFlag(args);
     if (integration)
       return { mode: "hook", integration };
-    console.error("hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode");
+    console.error("hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-cli");
     showCommandHelp("hook");
     process.exit(1);
   },

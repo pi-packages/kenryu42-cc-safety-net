@@ -49,7 +49,7 @@ function skipTomlComment(content: string, index: number) {
 function findTomlArrayClose(content: string, openIndex: number) {
   return findMatchingBracket(content, openIndex, {
     skipComment: skipTomlComment,
-    stringError: 'Unterminated string in OpenCode config',
+    stringError: 'Unterminated string in Kimi CLI config',
     bracketError: 'Unmatched hooks array in Kimi CLI config',
   });
 }

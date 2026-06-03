@@ -104,7 +104,7 @@ const commandParsers = {
     if (integration) return { mode: 'hook', integration };
 
     console.error(
-      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --opencode',
+      'hook requires a subcommand or integration flag. Try: cc-safety-net hook install --kimi-cli',
     );
     showCommandHelp('hook');
     process.exit(1);

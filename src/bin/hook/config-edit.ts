@@ -7,20 +7,7 @@ function isWhitespace(char: string | undefined) {
   return char !== undefined && /\s/.test(char);
 }
 
-export function skipWhitespace(content: string, index: number) {
-  let current = index;
-  while (isWhitespace(content[current])) current++;
-  return current;
-}
-
-export function skipWhitespaceAndComments(content: string, index: number) {
-  const whitespaceEnd = skipWhitespace(content, index);
-  const commentEnd = skipJsonComment(content, whitespaceEnd);
-  if (commentEnd === whitespaceEnd) return whitespaceEnd;
-  return skipWhitespaceAndComments(content, commentEnd);
-}
-
-export function skipString(content: string, index: number, errorMessage: string) {
+function skipString(content: string, index: number, errorMessage: string) {
   let current = index + 1;
   let isEscaped = false;
 
@@ -43,21 +30,6 @@ export function skipString(content: string, index: number, errorMessage: string)
   }
 
   throw new Error(errorMessage);
-}
-
-export function skipJsonComment(content: string, index: number) {
-  if (content[index] === '/' && content[index + 1] === '/') {
-    const newlineIndex = content.indexOf('\n', index + 2);
-    return newlineIndex === -1 ? content.length : newlineIndex;
-  }
-
-  if (content[index] === '/' && content[index + 1] === '*') {
-    const endIndex = content.indexOf('*/', index + 2);
-    if (endIndex === -1) throw new Error('Unterminated comment in OpenCode config');
-    return endIndex + 2;
-  }
-
-  return index;
 }
 
 export function findMatchingBracket(
