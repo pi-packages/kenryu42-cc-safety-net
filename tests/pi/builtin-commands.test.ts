@@ -10,7 +10,7 @@ describe('Pi built-in commands', () => {
 
     registerBuiltinCommands(pi);
 
-    expect(pi.commands['cc-safety-net']?.description).toBe('Manage Safety Net rulebooks');
+    expect(pi.commands['cc-safety-net']?.description).toBe('Manage CC Safety Net rulebooks');
   });
 
   test('uses the cc-safety-net skill workflow as the command prompt', () => {
@@ -67,7 +67,7 @@ describe('Pi built-in commands', () => {
     ccSafetyNetPiExtension(pi);
 
     expect(pi.events.map((event) => event.name)).toEqual(['tool_call']);
-    expect(pi.commands['cc-safety-net']?.description).toBe('Manage Safety Net rulebooks');
+    expect(pi.commands['cc-safety-net']?.description).toBe('Manage CC Safety Net rulebooks');
   });
 });
 

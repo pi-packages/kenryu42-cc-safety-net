@@ -147,8 +147,8 @@ describe('hook adapter direct integration', () => {
         denials.push(reason),
       );
 
-      expect(denials[0]).toContain('Safety Net failed closed');
-      expect(errors.join('\n')).toContain('Safety Net debug: hook analysis failed:');
+      expect(denials[0]).toContain('CC Safety Net failed closed');
+      expect(errors.join('\n')).toContain('CC Safety Net debug: hook analysis failed:');
     } finally {
       console.error = originalError;
       if (previousDebug === undefined) {

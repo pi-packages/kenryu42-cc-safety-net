@@ -63,7 +63,7 @@ describe('OpenCode plugin', () => {
     const plugin = await loadToolPlugin(process.cwd());
 
     await expect(plugin['tool.execute.before']({ tool: 'bash' }, { args: {} })).rejects.toThrow(
-      'Safety Net failed closed',
+      'CC Safety Net failed closed',
     );
   });
 

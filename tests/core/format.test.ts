@@ -4,7 +4,7 @@ import { formatBlockedMessage } from '@/core/format';
 describe('formatBlockedMessage', () => {
   test('includes reason in output', () => {
     const result = formatBlockedMessage({ reason: 'test reason' });
-    expect(result).toContain('BLOCKED by CC SafetyNet');
+    expect(result).toContain('BLOCKED by CC Safety Net');
     expect(result).toContain('Reason: test reason');
   });
 

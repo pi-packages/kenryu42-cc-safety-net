@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createLinkedWorktreeFixture, runSafetyNetCli, withTempDir } from '../../helpers.ts';
+import { createLinkedWorktreeFixture, runCCSafetyNetCli, withTempDir } from '../../helpers.ts';
 
 function writeGitRulebook(dir: string): void {
   mkdirSync(join(dir, '.cc-safety-net/rules', 'git-rules'), { recursive: true });
@@ -35,7 +35,7 @@ function writeGitRulebook(dir: string): void {
 
 async function explainJson(args: string[]) {
   return withTempDir('safety-net-explain-cli-', async (tempDir) => {
-    const result = await runSafetyNetCli(['explain', '--json', ...args], undefined, tempDir);
+    const result = await runCCSafetyNetCli(['explain', '--json', ...args], undefined, tempDir);
     return {
       parsed: JSON.parse(result.output),
       exitCode: result.exitCode,
@@ -49,7 +49,7 @@ async function withGitRulebook(
   await withTempDir('safety-net-explain-cli-', async (tempDir) => {
     const env = { HOME: join(tempDir, 'home') };
     writeGitRulebook(tempDir);
-    await runSafetyNetCli(['rule', 'add', 'git-rules'], env, tempDir);
+    await runCCSafetyNetCli(['rule', 'add', 'git-rules'], env, tempDir);
     await fn(tempDir, env);
   });
 }
@@ -144,7 +144,11 @@ describe('explain CLI flag parsing', () => {
 
   test('explain --json reports rulebook-backed custom rule metadata', async () => {
     await withGitRulebook(async (tempDir, env) => {
-      const result = await runSafetyNetCli(['explain', '--json', 'git', 'add', '-A'], env, tempDir);
+      const result = await runCCSafetyNetCli(
+        ['explain', '--json', 'git', 'add', '-A'],
+        env,
+        tempDir,
+      );
 
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.output).customRule).toEqual({
@@ -157,7 +161,7 @@ describe('explain CLI flag parsing', () => {
 
   test('explain human output reports rulebook-backed custom rule metadata', async () => {
     await withGitRulebook(async (tempDir, env) => {
-      const result = await runSafetyNetCli(['explain', 'git', 'add', '-A'], env, tempDir);
+      const result = await runCCSafetyNetCli(['explain', 'git', 'add', '-A'], env, tempDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.output).toContain('Rule: git-rules/block-add-all');
@@ -180,7 +184,11 @@ describe('explain CLI flag parsing', () => {
         'utf-8',
       );
 
-      const result = await runSafetyNetCli(['explain', '--json', 'git', 'add', '-A'], env, tempDir);
+      const result = await runCCSafetyNetCli(
+        ['explain', '--json', 'git', 'add', '-A'],
+        env,
+        tempDir,
+      );
 
       expect(result.exitCode).toBe(0);
       expect(JSON.parse(result.output).customRule.override).toEqual({

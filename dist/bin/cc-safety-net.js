@@ -2001,7 +2001,7 @@ var ENV_FLAGS = {
   worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
   debug: { name: "CC_SAFETY_NET_DEBUG" }
 };
-function getSafetyNetEnvModes() {
+function getCCSafetyNetEnvModes() {
   const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
   return {
     strict: envTruthy(ENV_FLAGS.strict),
@@ -4580,12 +4580,12 @@ function isFailClosedRepairCommand(segments2) {
   return false;
 }
 function isPackageRuleSyncRepair(tokens, packageIndex) {
-  return isCcSafetyNetPackage(tokens[packageIndex]) && tokens[packageIndex + 1] === "rule" && isRuleSyncArgs(tokens.slice(packageIndex + 2));
+  return isCCSafetyNetPackage(tokens[packageIndex]) && tokens[packageIndex + 1] === "rule" && isRuleSyncArgs(tokens.slice(packageIndex + 2));
 }
 function isRuleSyncArgs(args) {
   return args.length >= 1 && args.length <= 2 && args.filter((arg) => arg === "sync").length === 1 && args.every((arg) => arg === "sync" || arg === "--global" || arg === "-g");
 }
-function isCcSafetyNetPackage(value) {
+function isCCSafetyNetPackage(value) {
   return /^cc-safety-net(?:@[a-zA-Z0-9._-]+)?$/.test(value ?? "");
 }
 
@@ -6195,7 +6195,7 @@ function formatBlockedMessage(input) {
   const { reason, command: command2, segment } = input;
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((t) => t);
-  let message = `BLOCKED by CC SafetyNet
+  let message = `BLOCKED by CC Safety Net
 
 Reason: ${reason}`;
   if (command2) {
@@ -6222,7 +6222,7 @@ function excerpt(text, maxLen) {
 }
 
 // src/bin/hook/common.ts
-var REASON_SAFETY_NET_FAILED_CLOSED = "Safety Net failed closed because command analysis failed unexpectedly.";
+var REASON_SAFETY_NET_FAILED_CLOSED = "CC Safety Net failed closed because command analysis failed unexpectedly.";
 function outputHookDeny(createDenyOutput, reason, command2, segment, manualPermissionAdvice) {
   console.log(JSON.stringify(createDenyOutput(formatBlockedMessage({
     reason,
@@ -6269,7 +6269,7 @@ function handleBlockedHookCommand(command2, cwd, sessionId, outputDeny) {
     result = analyzeHookCommand(command2, cwd);
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
-      console.error(`Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
+      console.error(`CC Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
     }
     outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command2, command2);
     return;
@@ -6496,7 +6496,7 @@ var hookCommand = {
 // src/bin/commands/rule.ts
 var ruleCommand = {
   name: "rule",
-  description: "Manage Safety Net rulebook sources",
+  description: "Manage CC Safety Net rulebook sources",
   usage: "rule <subcommand>",
   subcommands: [
     { usage: "init", description: "Create starter rule config and rulebook files" },
@@ -8031,7 +8031,7 @@ function getConfigSource(options2) {
 }
 function buildAnalyzeOptions(explainOptions) {
   const cwd = resolve8(explainOptions?.cwd ?? process.cwd());
-  const modes = getSafetyNetEnvModes();
+  const modes = getCCSafetyNetEnvModes();
   return {
     cwd,
     effectiveCwd: cwd,
@@ -9742,7 +9742,7 @@ function getMigratedRulebook(name, migratedFrom, rules) {
     rulebook_version: 1,
     name,
     version: "1.0.0",
-    description: "Migrated CC SafetyNet rules.",
+    description: "Migrated CC Safety Net rules.",
     author: "project",
     migrated_from: migratedFrom,
     allowed_commands: [...new Set(rules.map((rule) => rule.command))],
@@ -10280,7 +10280,7 @@ function isPluginEnabled() {
     return settings.enabledPlugins[pluginKey] === true;
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
-      console.error(`Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`CC Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
     return false;
   }
@@ -10291,7 +10291,7 @@ async function printStatusline() {
   if (!enabled) {
     status = "\uD83D\uDEE1️ CC Safety Net ❌";
   } else {
-    const modes = getSafetyNetEnvModes();
+    const modes = getCCSafetyNetEnvModes();
     let modeEmojis = "";
     if (modes.strict) {
       modeEmojis += "\uD83D\uDD12";
@@ -10488,6 +10488,6 @@ async function main() {
     await runParsedCommand(command2);
 }
 main().catch((error) => {
-  console.error("Safety Net error:", error);
+  console.error("CC Safety Net error:", error);
   process.exit(1);
 });

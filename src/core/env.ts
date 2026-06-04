@@ -15,7 +15,7 @@ export const ENV_FLAGS = {
   debug: { name: 'CC_SAFETY_NET_DEBUG' },
 } as const satisfies Record<string, EnvFlag>;
 
-export function getSafetyNetEnvModes() {
+export function getCCSafetyNetEnvModes() {
   const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
   return {
     strict: envTruthy(ENV_FLAGS.strict),

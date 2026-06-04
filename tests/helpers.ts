@@ -124,7 +124,7 @@ export async function withTempDir<T>(prefix: string, fn: (dir: string) => T | Pr
   }
 }
 
-export async function runSafetyNetCli(
+export async function runCCSafetyNetCli(
   args: string[],
   env?: Record<string, string>,
   cwd?: string,
@@ -236,9 +236,9 @@ function runGit(args: readonly string[], cwd: string): void {
     stdio: 'ignore',
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: 'Safety Net Test',
+      GIT_AUTHOR_NAME: 'CC Safety Net Test',
       GIT_AUTHOR_EMAIL: 'safety-net@example.test',
-      GIT_COMMITTER_NAME: 'Safety Net Test',
+      GIT_COMMITTER_NAME: 'CC Safety Net Test',
       GIT_COMMITTER_EMAIL: 'safety-net@example.test',
     },
   });
@@ -252,7 +252,7 @@ export function createLinkedWorktreeFixture(): LinkedWorktreeFixture {
   mkdirSync(mainWorktree);
   runGit(['init'], mainWorktree);
   runGit(['config', 'user.email', 'safety-net@example.test'], mainWorktree);
-  runGit(['config', 'user.name', 'Safety Net Test'], mainWorktree);
+  runGit(['config', 'user.name', 'CC Safety Net Test'], mainWorktree);
   runGit(['config', 'commit.gpgsign', 'false'], mainWorktree);
   writeFileSync(join(mainWorktree, 'file.txt'), 'initial\n');
   runGit(['add', 'file.txt'], mainWorktree);

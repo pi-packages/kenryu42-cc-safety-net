@@ -1,14 +1,14 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
-import { getSafetyNetEnvModes } from '@/core/env';
+import { getCCSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/index';
 
 const REASON_SAFETY_NET_FAILED_CLOSED =
-  'Safety Net failed closed because command analysis failed unexpectedly.';
+  'CC Safety Net failed closed because command analysis failed unexpectedly.';
 
 export const CCSafetyNetPlugin: Plugin = async ({ directory }) => {
-  const modes = getSafetyNetEnvModes();
+  const modes = getCCSafetyNetEnvModes();
 
   return {
     config: async (opencodeConfig: Record<string, unknown>) => {

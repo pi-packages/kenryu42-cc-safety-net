@@ -21,7 +21,7 @@ describe('Claude Code hook', () => {
       expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
       expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
       expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
-        'BLOCKED by CC SafetyNet',
+        'BLOCKED by CC Safety Net',
       );
       expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('git reset --hard');
     });
@@ -44,7 +44,7 @@ describe('Claude Code hook', () => {
         expect(result.exitCode).toBe(0);
         expect(parsed.hookSpecificOutput.permissionDecision).toBe('deny');
         expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(
-          'BLOCKED by CC SafetyNet',
+          'BLOCKED by CC Safety Net',
         );
         expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain('missing lockfile');
         expect(parsed.hookSpecificOutput.permissionDecisionReason).toContain(

@@ -955,7 +955,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Copilot CLI: does not warn about unsupported user hook files when none configure Safety Net', () => {
+  test('Copilot CLI: does not warn about unsupported user hook files when none configure CC Safety Net', () => {
     const tmpBase = join(tmpdir(), `doctor-copilot-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -1025,7 +1025,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Copilot CLI: ignores non-Safety Net preToolUse hooks', () => {
+  test('Copilot CLI: ignores non-CC Safety Net preToolUse hooks', () => {
     const tmpBase = join(tmpdir(), `doctor-copilot-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -1382,7 +1382,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('Copilot CLI: does not warn about unsupported inline hooks when none configure Safety Net', () => {
+  test('Copilot CLI: does not warn about unsupported inline hooks when none configure CC Safety Net', () => {
     const tmpBase = join(tmpdir(), `doctor-copilot-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');

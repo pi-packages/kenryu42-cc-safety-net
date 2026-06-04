@@ -150,7 +150,7 @@ function isFailClosedRepairCommand(
 
 function isPackageRuleSyncRepair(tokens: string[], packageIndex: number): boolean {
   return (
-    isCcSafetyNetPackage(tokens[packageIndex]) &&
+    isCCSafetyNetPackage(tokens[packageIndex]) &&
     tokens[packageIndex + 1] === 'rule' &&
     isRuleSyncArgs(tokens.slice(packageIndex + 2))
   );
@@ -165,6 +165,6 @@ function isRuleSyncArgs(args: string[]): boolean {
   );
 }
 
-function isCcSafetyNetPackage(value: string | undefined): boolean {
+function isCCSafetyNetPackage(value: string | undefined): boolean {
   return /^cc-safety-net(?:@[a-zA-Z0-9._-]+)?$/.test(value ?? '');
 }

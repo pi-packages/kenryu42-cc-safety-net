@@ -11,7 +11,7 @@ export function loadBuiltinCommands(disabledCommands?: BuiltinCommandName[]): Bu
   const disabled = new Set(disabledCommands ?? []);
   const commands: BuiltinCommands = {};
   const definition: CommandDefinition = {
-    description: 'Manage Safety Net rulebooks',
+    description: 'Manage CC Safety Net rulebooks',
     template: CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf('## Workflow')),
   };
 

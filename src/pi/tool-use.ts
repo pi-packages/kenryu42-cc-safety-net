@@ -2,7 +2,7 @@ import { REASON_SAFETY_NET_FAILED_CLOSED } from '@/bin/hook/common';
 import { analyzeCommand, loadConfig } from '@/core/analyze';
 import { redactSecrets, writeAuditLog } from '@/core/audit';
 import type { LoadConfigOptions } from '@/core/config';
-import { ENV_FLAGS, envTruthy, getSafetyNetEnvModes } from '@/core/env';
+import { ENV_FLAGS, envTruthy, getCCSafetyNetEnvModes } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 
 type PiApi = {
@@ -42,7 +42,7 @@ export function handlePiToolUse(event: unknown, ctx: PiToolUseContext): PiToolUs
     return blockPiToolUse(REASON_SAFETY_NET_FAILED_CLOSED);
   }
 
-  const modes = getSafetyNetEnvModes();
+  const modes = getCCSafetyNetEnvModes();
   let result: ReturnType<typeof analyzeCommand>;
   try {
     result = (ctx.safetyNetAnalyzeCommand ?? analyzeCommand)(event.input.command, {
@@ -59,7 +59,7 @@ export function handlePiToolUse(event: unknown, ctx: PiToolUseContext): PiToolUs
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
       console.error(
-        `Safety Net debug: pi tool_use analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`,
+        `CC Safety Net debug: pi tool_use analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`,
       );
     }
     return blockPiToolUse(

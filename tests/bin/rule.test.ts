@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RULE_DOC } from '@/bin/rule/doc';
-import { runSafetyNetCli, withTempDir } from '../helpers';
+import { runCCSafetyNetCli, withTempDir } from '../helpers';
 
 describe('rule command docs', () => {
   test('documents current rulebook configuration', () => {
@@ -20,7 +20,7 @@ describe('rule command docs', () => {
   });
 
   test('prints rule docs', async () => {
-    const result = await runSafetyNetCli(['rule', 'doc']);
+    const result = await runCCSafetyNetCli(['rule', 'doc']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
@@ -29,7 +29,7 @@ describe('rule command docs', () => {
 
   test('prints help error when rule subcommand is missing', async () => {
     for (const args of [['rule'], ['rule', '--check']]) {
-      const result = await runSafetyNetCli(args);
+      const result = await runCCSafetyNetCli(args);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toBe('');
@@ -39,7 +39,7 @@ describe('rule command docs', () => {
   });
 
   test('prints successful help for rule help flag', async () => {
-    const result = await runSafetyNetCli(['rule', '--help']);
+    const result = await runCCSafetyNetCli(['rule', '--help']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
@@ -49,7 +49,7 @@ describe('rule command docs', () => {
 
   test('initializes project rules and sibling cache in the canonical layout', async () => {
     await withTempDir('safety-net-rule-init-', async (tempDir) => {
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'init'],
         { HOME: join(tempDir, 'home') },
         tempDir,
@@ -62,7 +62,7 @@ describe('rule command docs', () => {
 
   test('initializes global rules and sibling cache in the canonical layout', async () => {
     await withTempDir('safety-net-rule-init-global-', async (tempDir) => {
-      const result = await runSafetyNetCli(['rule', 'init', '--global'], {
+      const result = await runCCSafetyNetCli(['rule', 'init', '--global'], {
         CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
         HOME: join(tempDir, 'home'),
       });
@@ -76,11 +76,11 @@ describe('rule command docs', () => {
     await withTempDir('safety-net-rule-init-removed-', async (tempDir) => {
       const env = { HOME: join(tempDir, 'home') };
 
-      expect((await runSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
+      expect((await runCCSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
       expect(
-        (await runSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir)).exitCode,
+        (await runCCSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir)).exitCode,
       ).toBe(0);
-      const result = await runSafetyNetCli(['rule', 'init'], env, tempDir);
+      const result = await runCCSafetyNetCli(['rule', 'init'], env, tempDir);
 
       expectSuccessfulCli(result);
       expectProjectRulesConfigRules(tempDir, ['project-rules']);
@@ -92,11 +92,11 @@ describe('rule command docs', () => {
     await withTempDir('safety-net-rule-init-global-removed-', async (tempDir) => {
       const env = globalRuleEnv(tempDir);
 
-      expect((await runSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
+      expect((await runCCSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
       expect(
-        (await runSafetyNetCli(['rule', 'remove', 'user-rules', '--global'], env)).exitCode,
+        (await runCCSafetyNetCli(['rule', 'remove', 'user-rules', '--global'], env)).exitCode,
       ).toBe(0);
-      const result = await runSafetyNetCli(['rule', 'init', '--global'], env);
+      const result = await runCCSafetyNetCli(['rule', 'init', '--global'], env);
 
       expectSuccessfulCli(result);
       expect(readRulesConfig(join(tempDir, '.cc-safety-net', 'rules', 'rule.json')).rules).toEqual([
@@ -123,7 +123,7 @@ describe('rule command docs', () => {
         }),
       );
 
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'init'],
         { HOME: join(tempDir, 'home') },
         tempDir,
@@ -142,12 +142,12 @@ describe('rule command docs', () => {
 
   test('initialization does not duplicate an existing default source', async () => {
     await withTempDir('safety-net-rule-init-no-duplicate-', async (tempDir) => {
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'init'],
         { HOME: join(tempDir, 'home') },
         tempDir,
       );
-      const secondResult = await runSafetyNetCli(
+      const secondResult = await runCCSafetyNetCli(
         ['rule', 'init'],
         { HOME: join(tempDir, 'home') },
         tempDir,
@@ -192,8 +192,10 @@ describe('rule list', () => {
           },
         }),
       );
-      expect((await runSafetyNetCli(['rule', 'sync', '--global'], env, tempDir)).exitCode).toBe(0);
-      expect((await runSafetyNetCli(['rule', 'sync'], env, tempDir)).exitCode).toBe(0);
+      expect((await runCCSafetyNetCli(['rule', 'sync', '--global'], env, tempDir)).exitCode).toBe(
+        0,
+      );
+      expect((await runCCSafetyNetCli(['rule', 'sync'], env, tempDir)).exitCode).toBe(0);
 
       const result = await runRuleList(tempDir, env);
 
@@ -227,7 +229,7 @@ describe('rule list', () => {
   });
 
   test('rejects global list scope', async () => {
-    const result = await runSafetyNetCli(['rule', 'list', '--global']);
+    const result = await runCCSafetyNetCli(['rule', 'list', '--global']);
 
     expect(result.exitCode).toBe(1);
     expect(result.output).toBe('');
@@ -254,7 +256,7 @@ describe('rule remove', () => {
     await withInitializedProjectRules(
       'safety-net-rule-remove-keep-source-',
       async (tempDir, env) => {
-        const result = await runSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir);
+        const result = await runCCSafetyNetCli(['rule', 'remove', 'project-rules'], env, tempDir);
 
         expectSuccessfulCli(result);
         expectProjectRulesConfigRules(tempDir, []);
@@ -269,7 +271,7 @@ describe('rule remove', () => {
     await withInitializedProjectRules(
       'safety-net-rule-remove-delete-source-',
       async (tempDir, env) => {
-        const result = await runSafetyNetCli(
+        const result = await runCCSafetyNetCli(
           ['rule', 'remove', 'project-rules', '--delete-source'],
           env,
           tempDir,
@@ -292,7 +294,7 @@ describe('rule remove', () => {
           'keep me',
         );
 
-        const result = await runSafetyNetCli(
+        const result = await runCCSafetyNetCli(
           ['rule', 'remove', 'project-rules', '--delete-source'],
           env,
           tempDir,
@@ -310,7 +312,7 @@ describe('rule remove', () => {
     await withTempDir('safety-net-rule-remove-github-source-', async (tempDir) => {
       writeProjectRulesConfig(tempDir, ['owner/repo#abc123/project-rules']);
 
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'remove', 'owner/repo#abc123/project-rules', '--delete-source'],
         { HOME: join(tempDir, 'home') },
         tempDir,
@@ -326,7 +328,7 @@ describe('rule remove', () => {
     await withInitializedGlobalRules(
       'safety-net-rule-remove-global-delete-source-',
       async (tempDir, env) => {
-        const result = await runSafetyNetCli(
+        const result = await runCCSafetyNetCli(
           ['rule', 'remove', '--global', 'user-rules', '--delete-source'],
           env,
         );
@@ -341,7 +343,7 @@ describe('rule remove', () => {
   });
 
   test('rejects delete-source on non-remove subcommands', async () => {
-    const result = await runSafetyNetCli(['rule', 'add', 'project-rules', '--delete-source']);
+    const result = await runCCSafetyNetCli(['rule', 'add', 'project-rules', '--delete-source']);
 
     expect(result.exitCode).toBe(1);
     expect(result.output).toBe('');
@@ -349,7 +351,7 @@ describe('rule remove', () => {
   });
 
   test('rejects delete-source without subcommand with remove-specific guidance', async () => {
-    const result = await runSafetyNetCli(['rule', '--delete-source']);
+    const result = await runCCSafetyNetCli(['rule', '--delete-source']);
 
     expect(result.exitCode).toBe(1);
     expect(result.output).toBe('');
@@ -381,7 +383,7 @@ async function withInitializedProjectRules(
 ) {
   await withTempDir(prefix, async (tempDir) => {
     const env = projectRuleEnv(tempDir);
-    expect((await runSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
+    expect((await runCCSafetyNetCli(['rule', 'init'], env, tempDir)).exitCode).toBe(0);
     await fn(tempDir, env);
   });
 }
@@ -392,7 +394,7 @@ async function withInitializedGlobalRules(
 ) {
   await withTempDir(prefix, async (tempDir) => {
     const env = globalRuleEnv(tempDir);
-    expect((await runSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
+    expect((await runCCSafetyNetCli(['rule', 'init', '--global'], env)).exitCode).toBe(0);
     await fn(tempDir, env);
   });
 }
@@ -406,12 +408,12 @@ function writeProjectRulesConfig(tempDir: string, rules: string[]): void {
 }
 
 function runRuleList(tempDir: string, env = ruleListEnv(tempDir)) {
-  return runSafetyNetCli(['rule', 'list'], env, tempDir);
+  return runCCSafetyNetCli(['rule', 'list'], env, tempDir);
 }
 
 describe('rule migrate', () => {
   test('rejects unsupported write option', async () => {
-    const result = await runSafetyNetCli(['rule', 'migrate', '--write']);
+    const result = await runCCSafetyNetCli(['rule', 'migrate', '--write']);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('Unknown option for rule migrate: --write');
@@ -426,7 +428,7 @@ describe('rule migrate', () => {
         'docker',
       );
 
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'migrate'],
         {
           CC_SAFETY_NET_HOME: join(tempDir, 'home', '.cc-safety-net'),
@@ -491,9 +493,9 @@ describe('rule migrate', () => {
         CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
         HOME: join(tempDir, 'home'),
       };
-      expect((await runSafetyNetCli(['rule', 'migrate'], env, tempDir)).exitCode).toBe(0);
+      expect((await runCCSafetyNetCli(['rule', 'migrate'], env, tempDir)).exitCode).toBe(0);
       writeLegacyConfig(join(tempDir, '.cc-safety-net', 'config.json'), 'block-user-git', 'git');
-      const result = await runSafetyNetCli(['rule', 'migrate'], env, tempDir);
+      const result = await runCCSafetyNetCli(['rule', 'migrate'], env, tempDir);
 
       expect(result.exitCode).toBe(0);
       expect(readRulesConfig(join(userRulesDir, 'rule.json'))).toEqual({
@@ -516,7 +518,7 @@ describe('rule migrate', () => {
         JSON.stringify({ version: 2 }),
       );
 
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'migrate', '--cleanup'],
         {
           CC_SAFETY_NET_HOME: join(tempDir, 'home', '.cc-safety-net'),
@@ -543,7 +545,7 @@ describe('rule migrate', () => {
       );
       writeLegacyConfig(join(tempDir, '.cc-safety-net', 'config.json'), 'block-user-git', 'git');
 
-      const result = await runSafetyNetCli(
+      const result = await runCCSafetyNetCli(
         ['rule', 'migrate'],
         {
           CC_SAFETY_NET_HOME: join(tempDir, '.cc-safety-net'),
@@ -574,7 +576,7 @@ function expectCanonicalRulesLayout(dir: string, rulebookName: string): void {
   expect(existsSync(join(dir, '.cc-safety-net', 'rules', 'cache'))).toBe(false);
 }
 
-function expectSuccessfulCli(result: Awaited<ReturnType<typeof runSafetyNetCli>>): void {
+function expectSuccessfulCli(result: Awaited<ReturnType<typeof runCCSafetyNetCli>>): void {
   expect(result.exitCode).toBe(0);
   expect(result.stderr).toBe('');
 }

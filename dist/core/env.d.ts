@@ -27,7 +27,7 @@ export declare const ENV_FLAGS: {
         readonly name: "CC_SAFETY_NET_DEBUG";
     };
 };
-export declare function getSafetyNetEnvModes(): {
+export declare function getCCSafetyNetEnvModes(): {
     strict: boolean;
     paranoidAll: boolean;
     paranoidRm: boolean;

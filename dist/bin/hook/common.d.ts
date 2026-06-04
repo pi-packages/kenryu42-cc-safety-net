@@ -1,4 +1,4 @@
-export declare const REASON_SAFETY_NET_FAILED_CLOSED = "Safety Net failed closed because command analysis failed unexpectedly.";
+export declare const REASON_SAFETY_NET_FAILED_CLOSED = "CC Safety Net failed closed because command analysis failed unexpectedly.";
 type HookDenyOutput = (reason: string, command?: string, segment?: string) => void;
 type HookAdapter<T> = {
     outputDeny: HookDenyOutput;

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { findCommand, getVisibleCommands } from '@/bin/commands';
-import { runSafetyNetCli } from '../helpers';
+import { runCCSafetyNetCli } from '../helpers';
 
 describe('command registry', () => {
   describe('findCommand', () => {
@@ -110,7 +110,7 @@ describe('command routing', () => {
     ];
 
     for (const command of cases) {
-      const result = await runSafetyNetCli(command.args);
+      const result = await runCCSafetyNetCli(command.args);
 
       expect(result.exitCode).toBe(command.exitCode ?? 0);
       expect(result.output).toContain(command.output);
@@ -119,7 +119,7 @@ describe('command routing', () => {
   });
 
   test('bare hook command explains the missing subcommand or integration flag', async () => {
-    const result = await runSafetyNetCli(['hook']);
+    const result = await runCCSafetyNetCli(['hook']);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain(

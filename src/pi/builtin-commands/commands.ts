@@ -16,7 +16,7 @@ type PiCommandContext = {
 };
 
 const COMMAND_NAME = 'cc-safety-net';
-const COMMAND_DESCRIPTION = 'Manage Safety Net rulebooks';
+const COMMAND_DESCRIPTION = 'Manage CC Safety Net rulebooks';
 const DEFAULT_USER_REQUEST = 'Help me configure CC Safety Net.';
 
 export function registerBuiltinCommands(pi: PiCommandApi): void {

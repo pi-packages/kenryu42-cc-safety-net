@@ -4,7 +4,7 @@ import { ENV_FLAGS, envTruthy } from '@/core/env';
 import { formatBlockedMessage } from '@/core/format';
 
 export const REASON_SAFETY_NET_FAILED_CLOSED =
-  'Safety Net failed closed because command analysis failed unexpectedly.';
+  'CC Safety Net failed closed because command analysis failed unexpectedly.';
 
 type HookDenyOutput = (reason: string, command?: string, segment?: string) => void;
 
@@ -104,7 +104,7 @@ export function handleBlockedHookCommand(
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
       console.error(
-        `Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`,
+        `CC Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`,
       );
     }
     outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command, command);

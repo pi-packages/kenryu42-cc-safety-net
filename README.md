@@ -73,7 +73,7 @@ Claude Code's `.claude/settings.json` supports [deny rules](https://code.claude.
 
 ### At a Glance
 
-| | Permission Deny Rules | Safety Net |
+| | Permission Deny Rules | CC Safety Net |
 |---|---|---|
 | **Setup** | Manual configuration required | Works out of the box |
 | **Parsing** | Wildcard pattern matching | Semantic command analysis |
@@ -221,7 +221,7 @@ gemini extensions install https://github.com/kenryu42/gemini-safety-net
 
 ### Kimi CLI Installation
 
-Install Safety Net into your Kimi CLI config:
+Install CC Safety Net into your Kimi CLI config:
 
 ```bash
 npx -y cc-safety-net hook install --kimi-cli
@@ -232,7 +232,7 @@ npx -y cc-safety-net hook install --kimi-cli
 
 ### OpenCode Installation
 
-Install Safety Net with OpenCode's native plugin command:
+Install CC Safety Net with OpenCode's native plugin command:
 
 ```bash
 opencode plugin -g cc-safety-net
@@ -242,7 +242,7 @@ opencode plugin -g cc-safety-net
 
 ### Pi Installation
 
-Install Safety Net with Pi's package installer:
+Install CC Safety Net with Pi's package installer:
 
 ```bash
 pi install npm:cc-safety-net
@@ -314,14 +314,14 @@ The status line displays different emojis based on the current configuration:
 
 | Status | Display | Meaning |
 |--------|---------|---------|
-| Plugin disabled | `🛡️ Safety Net ❌` | Safety Net plugin is not enabled |
-| Default mode | `🛡️ Safety Net ✅` | Protection active with default settings |
-| Strict mode | `🛡️ Safety Net 🔒` | `SAFETY_NET_STRICT=1` — fail-closed on unparseable commands |
-| Paranoid mode | `🛡️ Safety Net 👁️` | `SAFETY_NET_PARANOID=1` — all paranoid checks enabled |
-| Paranoid RM only | `🛡️ Safety Net 🗑️` | `SAFETY_NET_PARANOID_RM=1` — blocks `rm -rf` even within cwd |
-| Paranoid interpreters only | `🛡️ Safety Net 🐚` | `SAFETY_NET_PARANOID_INTERPRETERS=1` — blocks interpreter one-liners |
-| Worktree mode | `🛡️ Safety Net 🌳` | `SAFETY_NET_WORKTREE=1` — relax local git discards inside linked worktrees |
-| Strict + Paranoid | `🛡️ Safety Net 🔒👁️` | Both strict and paranoid modes enabled |
+| Plugin disabled | `🛡️ CC Safety Net ❌` | CC Safety Net plugin is not enabled |
+| Default mode | `🛡️ CC Safety Net ✅` | Protection active with default settings |
+| Strict mode | `🛡️ CC Safety Net 🔒` | `SAFETY_NET_STRICT=1` — fail-closed on unparseable commands |
+| Paranoid mode | `🛡️ CC Safety Net 👁️` | `SAFETY_NET_PARANOID=1` — all paranoid checks enabled |
+| Paranoid RM only | `🛡️ CC Safety Net 🗑️` | `SAFETY_NET_PARANOID_RM=1` — blocks `rm -rf` even within cwd |
+| Paranoid interpreters only | `🛡️ CC Safety Net 🐚` | `SAFETY_NET_PARANOID_INTERPRETERS=1` — blocks interpreter one-liners |
+| Worktree mode | `🛡️ CC Safety Net 🌳` | `SAFETY_NET_WORKTREE=1` — relax local git discards inside linked worktrees |
+| Strict + Paranoid | `🛡️ CC Safety Net 🔒👁️` | Both strict and paranoid modes enabled |
 
 Multiple mode emojis are combined when multiple environment variables are set.
 
@@ -356,7 +356,7 @@ The doctor command checks:
 
 ## Explain (Debug Analysis)
 
-Trace how Safety Net analyzes a command step-by-step. Useful for debugging why a command is blocked or allowed, or when developing custom rules.
+Trace how CC Safety Net analyzes a command step-by-step. Useful for debugging why a command is blocked or allowed, or when developing custom rules.
 
 ```bash
 npx cc-safety-net explain "git reset --hard"
@@ -430,7 +430,7 @@ When a destructive command is detected, the plugin blocks the tool execution and
 
 Example output:
 ```text
-BLOCKED by Safety Net
+BLOCKED by CC Safety Net
 
 Reason: git checkout -- discards uncommitted changes permanently. Use 'git stash' first.
 
@@ -744,7 +744,7 @@ Rulebook-backed custom rules fail closed when configured rulebooks cannot be loa
 When a custom rule blocks a command, the output includes the rule name:
 
 ```text
-BLOCKED by Safety Net
+BLOCKED by CC Safety Net
 
 Reason: [block-git-add-all] Use 'git add <specific-files>' instead of blanket add.
 

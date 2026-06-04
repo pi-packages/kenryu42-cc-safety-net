@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runSafetyNetCli } from '../helpers.ts';
+import { runCCSafetyNetCli } from '../helpers.ts';
 
 function clearEnv(): void {
   delete process.env.CC_SAFETY_NET_STRICT;
@@ -19,7 +19,7 @@ function clearEnv(): void {
 }
 
 async function runStatusline(env: Record<string, string>) {
-  const result = await runSafetyNetCli(['statusline', '--claude-code'], env);
+  const result = await runCCSafetyNetCli(['statusline', '--claude-code'], env);
   return { output: result.output.trim(), exitCode: result.exitCode };
 }
 
@@ -128,7 +128,7 @@ describe('statusline command routing', () => {
     const settingsPath = join(tempDir, 'settings.json');
     try {
       await writePluginSettings(settingsPath, true);
-      const result = await runSafetyNetCli(['statusline', '-cc'], {
+      const result = await runCCSafetyNetCli(['statusline', '-cc'], {
         CLAUDE_SETTINGS_PATH: settingsPath,
       });
 
@@ -144,10 +144,10 @@ describe('statusline command routing', () => {
     const settingsPath = join(tempDir, 'settings.json');
     try {
       await writePluginSettings(settingsPath, true);
-      const preferred = await runSafetyNetCli(['statusline', '--claude-code'], {
+      const preferred = await runCCSafetyNetCli(['statusline', '--claude-code'], {
         CLAUDE_SETTINGS_PATH: settingsPath,
       });
-      const legacy = await runSafetyNetCli(['--statusline'], {
+      const legacy = await runCCSafetyNetCli(['--statusline'], {
         CLAUDE_SETTINGS_PATH: settingsPath,
       });
 
@@ -159,7 +159,7 @@ describe('statusline command routing', () => {
   });
 
   test('statusline without platform flag prints help and exits nonzero', async () => {
-    const result = await runSafetyNetCli(['statusline']);
+    const result = await runCCSafetyNetCli(['statusline']);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain('statusline requires --claude-code (-cc)');
@@ -210,14 +210,14 @@ describe('statusline enabled/disabled detection', () => {
     const settingsPath = join(tempDir, 'settings.json');
     await writeFile(settingsPath, '{ invalid json }');
 
-    const result = await runSafetyNetCli(['statusline', '--claude-code'], {
+    const result = await runCCSafetyNetCli(['statusline', '--claude-code'], {
       CLAUDE_SETTINGS_PATH: settingsPath,
       CC_SAFETY_NET_DEBUG: '1',
     });
 
     expect(result.exitCode).toBe(0);
     expect(result.output.trim()).toBe('🛡️ CC Safety Net ❌');
-    expect(result.stderr).toContain('Safety Net debug: failed to read Claude settings:');
+    expect(result.stderr).toContain('CC Safety Net debug: failed to read Claude settings:');
     expect(result.stderr).toContain(settingsPath);
   });
 

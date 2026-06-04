@@ -1,4 +1,4 @@
-# Contributing to Claude Code Safety Net
+# Contributing to CC Safety Net
 
 First off, thanks for taking the time to contribute! This document provides guidelines and instructions for contributing to cc-safety-net.
 
@@ -417,4 +417,4 @@ When adding rules, ensure you test these edge cases:
 
 ---
 
-Thank you for contributing to Claude Code Safety Net! Your efforts help keep AI-assisted coding safer for everyone.
+Thank you for contributing to CC Safety Net! Your efforts help keep AI-assisted coding safer for everyone.

@@ -2,7 +2,7 @@ import type { Command } from './types';
 
 export const ruleCommand = {
   name: 'rule' as const,
-  description: 'Manage Safety Net rulebook sources',
+  description: 'Manage CC Safety Net rulebook sources',
   usage: 'rule <subcommand>',
   subcommands: [
     { usage: 'init', description: 'Create starter rule config and rulebook files' },

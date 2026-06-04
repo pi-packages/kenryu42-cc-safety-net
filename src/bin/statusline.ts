@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { ENV_FLAGS, envTruthy, getSafetyNetEnvModes } from '@/core/env';
+import { ENV_FLAGS, envTruthy, getCCSafetyNetEnvModes } from '@/core/env';
 
 /**
  * Read piped stdin content asynchronously.
@@ -67,7 +67,7 @@ function isPluginEnabled(): boolean {
   } catch (error) {
     if (envTruthy(ENV_FLAGS.debug)) {
       console.error(
-        `Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`,
+        `CC Safety Net debug: failed to read Claude settings: ${settingsPath}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     // On any error (invalid JSON, etc.), default to disabled
@@ -84,7 +84,7 @@ export async function printStatusline(): Promise<void> {
   if (!enabled) {
     status = '🛡️ CC Safety Net ❌';
   } else {
-    const modes = getSafetyNetEnvModes();
+    const modes = getCCSafetyNetEnvModes();
 
     let modeEmojis = '';
 

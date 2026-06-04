@@ -1945,7 +1945,7 @@ var ENV_FLAGS = {
   worktree: { name: "CC_SAFETY_NET_WORKTREE", legacyName: "SAFETY_NET_WORKTREE" },
   debug: { name: "CC_SAFETY_NET_DEBUG" }
 };
-function getSafetyNetEnvModes() {
+function getCCSafetyNetEnvModes() {
   const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
   return {
     strict: envTruthy(ENV_FLAGS.strict),
@@ -4524,12 +4524,12 @@ function isFailClosedRepairCommand(segments2) {
   return false;
 }
 function isPackageRuleSyncRepair(tokens, packageIndex) {
-  return isCcSafetyNetPackage(tokens[packageIndex]) && tokens[packageIndex + 1] === "rule" && isRuleSyncArgs(tokens.slice(packageIndex + 2));
+  return isCCSafetyNetPackage(tokens[packageIndex]) && tokens[packageIndex + 1] === "rule" && isRuleSyncArgs(tokens.slice(packageIndex + 2));
 }
 function isRuleSyncArgs(args) {
   return args.length >= 1 && args.length <= 2 && args.filter((arg) => arg === "sync").length === 1 && args.every((arg) => arg === "sync" || arg === "--global" || arg === "-g");
 }
-function isCcSafetyNetPackage(value) {
+function isCCSafetyNetPackage(value) {
   return /^cc-safety-net(?:@[a-zA-Z0-9._-]+)?$/.test(value ?? "");
 }
 
@@ -6079,7 +6079,7 @@ function formatBlockedMessage(input) {
   const { reason, command: command2, segment } = input;
   const maxLen = input.maxLen ?? 200;
   const redact = input.redact ?? ((t) => t);
-  let message = `BLOCKED by CC SafetyNet
+  let message = `BLOCKED by CC Safety Net
 
 Reason: ${reason}`;
   if (command2) {
@@ -6123,7 +6123,7 @@ Use information already provided in the user's prompt. Ask only when the scope, 
    - Run \`npx -y cc-safety-net rule verify\`
    - Run \`npx -y cc-safety-net rule list\`
 5. Inspect relevant project files only when the user asks for rule suggestions or the requested rule depends on project context. Look at manifests, scripts, task runners, CI, infrastructure, database, migration, and deployment files that explain risky commands.
-6. Convert the request into valid Safety Net JSON using \`rule doc\`.
+6. Convert the request into valid CC Safety Net JSON using \`rule doc\`.
    - For User or Project scope, add or edit the selected local \`rule.json\` and \`<rulebook-name>/rulebook.json\`.
    - For GitHub scope, add or edit \`.cc-safety-net/rules/<rulebook-name>/rulebook.json\` in the current repository.
    - Do not offer to add a GitHub source with \`owner/repo\`; installing rules from a GitHub source is outside this workflow.
@@ -6138,7 +6138,7 @@ Use information already provided in the user's prompt. Ask only when the scope, 
 
 ## Rules
 
-- Custom rules can only add restrictions; they cannot bypass built-in SafetyNet protections.
+- Custom rules can only add restrictions; they cannot bypass built-in CC Safety Net protections.
 - Config files list rulebook sources. Rule definitions live in \`rulebook.json\`, not directly in \`rule.json\`.
 - Do not use legacy inline \`.safety-net.json\` or \`~/.cc-safety-net/config.json\` rules. Convert existing legacy files with \`npx -y cc-safety-net rule migrate\`.
 - Every rule command must be listed in \`allowed_commands\`, and every rule must have at least one blocked fixture.
@@ -6153,7 +6153,7 @@ function loadBuiltinCommands(disabledCommands) {
   const disabled = new Set(disabledCommands ?? []);
   const commands = {};
   const definition = {
-    description: "Manage Safety Net rulebooks",
+    description: "Manage CC Safety Net rulebooks",
     template: CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf("## Workflow"))
   };
   if (!disabled.has(COMMAND_NAME)) {
@@ -6162,9 +6162,9 @@ function loadBuiltinCommands(disabledCommands) {
   return commands;
 }
 // src/index.ts
-var REASON_SAFETY_NET_FAILED_CLOSED = "Safety Net failed closed because command analysis failed unexpectedly.";
+var REASON_SAFETY_NET_FAILED_CLOSED = "CC Safety Net failed closed because command analysis failed unexpectedly.";
 var CCSafetyNetPlugin = async ({ directory }) => {
-  const modes = getSafetyNetEnvModes();
+  const modes = getCCSafetyNetEnvModes();
   return {
     config: async (opencodeConfig) => {
       const builtinCommands = loadBuiltinCommands();

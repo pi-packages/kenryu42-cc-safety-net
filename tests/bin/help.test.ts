@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { findCommand } from '@/bin/commands';
 import { printCommandHelp, printHelp, printVersion, showCommandHelp } from '@/bin/help';
-import { runSafetyNetCli } from '../helpers';
+import { runCCSafetyNetCli } from '../helpers';
 
 /**
  * Capture console.log output during a function call.
@@ -23,22 +23,22 @@ function captureOutput<T>(fn: () => T) {
 describe('help output', () => {
   describe('removed legacy flags', () => {
     test('rejects --verify-config as unknown', async () => {
-      const result = await runSafetyNetCli(['--verify-config']);
+      const result = await runCCSafetyNetCli(['--verify-config']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown option: --verify-config');
     });
 
     test('rejects -vc as unknown', async () => {
-      const result = await runSafetyNetCli(['-vc']);
+      const result = await runCCSafetyNetCli(['-vc']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown option: -vc');
     });
 
     test('does not route doctor when it is not the command name', async () => {
-      const nestedCommand = await runSafetyNetCli(['xxx', 'doctor']);
-      const nestedAlias = await runSafetyNetCli(['xxx', '--doctor']);
+      const nestedCommand = await runCCSafetyNetCli(['xxx', 'doctor']);
+      const nestedAlias = await runCCSafetyNetCli(['xxx', '--doctor']);
 
       expect(nestedCommand.exitCode).toBe(1);
       expect(nestedCommand.stderr).toContain('Unknown option: xxx');
@@ -47,13 +47,13 @@ describe('help output', () => {
     });
 
     test('supports doctor command alias only as the first argument', async () => {
-      const result = await runSafetyNetCli(['--doctor', '--json', '--skip-update-check']);
+      const result = await runCCSafetyNetCli(['--doctor', '--json', '--skip-update-check']);
 
       expect(JSON.parse(result.output)).toHaveProperty('hooks');
     });
 
     test('doctor json output contains the full top-level report shape', async () => {
-      const result = await runSafetyNetCli(['doctor', '--json', '--skip-update-check']);
+      const result = await runCCSafetyNetCli(['doctor', '--json', '--skip-update-check']);
       const report = JSON.parse(result.output);
 
       expect(result.exitCode).toBeGreaterThanOrEqual(0);
@@ -80,7 +80,7 @@ Blocks destructive git and filesystem commands before execution.
 COMMANDS:
   cc-safety-net doctor [options]             Run diagnostic checks to verify installation and configuration
   cc-safety-net explain [options] <command>  Show step-by-step analysis trace of how a command would be analyzed
-  cc-safety-net rule <subcommand>            Manage Safety Net rulebook sources
+  cc-safety-net rule <subcommand>            Manage CC Safety Net rulebook sources
   cc-safety-net hook <coding cli>            Run as an agent CLI hook (reads JSON from stdin)
   cc-safety-net statusline <coding cli>      Print status line with mode indicators for shell integration
 

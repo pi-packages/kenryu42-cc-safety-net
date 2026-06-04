@@ -199,7 +199,7 @@ function getMigratedRulebook(name: string, migratedFrom: string, rules: CustomRu
     rulebook_version: 1,
     name,
     version: '1.0.0',
-    description: 'Migrated CC SafetyNet rules.',
+    description: 'Migrated CC Safety Net rules.',
     author: 'project',
     migrated_from: migratedFrom,
     allowed_commands: [...new Set(rules.map((rule) => rule.command))],

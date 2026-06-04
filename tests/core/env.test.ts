@@ -3,8 +3,8 @@ import {
   ENV_FLAGS,
   envFlagIsSet,
   envTruthy,
+  getCCSafetyNetEnvModes,
   getEnvFlagValue,
-  getSafetyNetEnvModes,
 } from '@/core/env';
 
 describe('envTruthy', () => {
@@ -139,11 +139,11 @@ describe('envFlagIsSet', () => {
   });
 });
 
-describe('getSafetyNetEnvModes', () => {
+describe('getCCSafetyNetEnvModes', () => {
   test('expands paranoid all mode to rm and interpreter modes', () => {
     process.env.CC_SAFETY_NET_PARANOID = '1';
 
-    expect(getSafetyNetEnvModes()).toEqual({
+    expect(getCCSafetyNetEnvModes()).toEqual({
       strict: false,
       paranoidAll: true,
       paranoidRm: true,
@@ -160,7 +160,7 @@ describe('getSafetyNetEnvModes', () => {
     process.env.CC_SAFETY_NET_PARANOID_INTERPRETERS = '1';
     process.env.CC_SAFETY_NET_WORKTREE = '1';
 
-    expect(getSafetyNetEnvModes()).toEqual({
+    expect(getCCSafetyNetEnvModes()).toEqual({
       strict: true,
       paranoidAll: false,
       paranoidRm: true,

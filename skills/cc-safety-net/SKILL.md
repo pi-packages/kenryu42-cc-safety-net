@@ -21,7 +21,7 @@ Use information already provided in the user's prompt. Ask only when the scope, 
    - Run `npx -y cc-safety-net rule verify`
    - Run `npx -y cc-safety-net rule list`
 5. Inspect relevant project files only when the user asks for rule suggestions or the requested rule depends on project context. Look at manifests, scripts, task runners, CI, infrastructure, database, migration, and deployment files that explain risky commands.
-6. Convert the request into valid Safety Net JSON using `rule doc`.
+6. Convert the request into valid CC Safety Net JSON using `rule doc`.
    - For User or Project scope, add or edit the selected local `rule.json` and `<rulebook-name>/rulebook.json`.
    - For GitHub scope, add or edit `.cc-safety-net/rules/<rulebook-name>/rulebook.json` in the current repository.
    - Do not offer to add a GitHub source with `owner/repo`; installing rules from a GitHub source is outside this workflow.
@@ -36,7 +36,7 @@ Use information already provided in the user's prompt. Ask only when the scope, 
 
 ## Rules
 
-- Custom rules can only add restrictions; they cannot bypass built-in SafetyNet protections.
+- Custom rules can only add restrictions; they cannot bypass built-in CC Safety Net protections.
 - Config files list rulebook sources. Rule definitions live in `rulebook.json`, not directly in `rule.json`.
 - Do not use legacy inline `.safety-net.json` or `~/.cc-safety-net/config.json` rules. Convert existing legacy files with `npx -y cc-safety-net rule migrate`.
 - Every rule command must be listed in `allowed_commands`, and every rule must have at least one blocked fixture.

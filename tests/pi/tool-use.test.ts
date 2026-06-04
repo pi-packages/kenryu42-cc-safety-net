@@ -19,7 +19,7 @@ describe('Pi tool_use event', () => {
 
     expect(result).toEqual({
       block: true,
-      reason: expect.stringContaining('BLOCKED by CC SafetyNet'),
+      reason: expect.stringContaining('BLOCKED by CC Safety Net'),
     });
     expect(result?.reason).toContain('Command: rm -rf .');
   });
@@ -45,7 +45,7 @@ describe('Pi tool_use event', () => {
 
     expect(result).toEqual({
       block: true,
-      reason: expect.stringContaining('Safety Net failed closed'),
+      reason: expect.stringContaining('CC Safety Net failed closed'),
     });
   });
 
@@ -75,7 +75,7 @@ describe('Pi tool_use event', () => {
 
       expect(result).toEqual({
         block: true,
-        reason: expect.stringContaining('Safety Net failed closed'),
+        reason: expect.stringContaining('CC Safety Net failed closed'),
       });
       expect(result?.reason).toContain('Command: git status');
     } finally {
@@ -97,7 +97,7 @@ describe('Pi tool_use event', () => {
     }
   });
 
-  test('ignores user bash commands because Safety Net only blocks agent tool execution', () => {
+  test('ignores user bash commands because CC Safety Net only blocks agent tool execution', () => {
     expect(
       handlePiToolUse(
         { type: 'user_bash', command: 'rm -rf .', cwd: process.cwd() },

@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, validateRulesConfigFile } from '@/core/config';
-import { getSafetyNetEnvModes } from '@/core/env';
+import { getCCSafetyNetEnvModes } from '@/core/env';
 import { getProjectRulesConfigPath, getUserRulesConfigPath } from '@/core/rules/policy';
 import type { AnalyzeOptions, ExplainOptions } from '@/types';
 
@@ -57,7 +57,7 @@ export function getConfigSource(options?: GetConfigSourceOptions): {
 export function buildAnalyzeOptions(explainOptions?: ExplainOptions): AnalyzeOptions {
   // Resolve to absolute path - relative paths break cwd comparison logic
   const cwd = resolve(explainOptions?.cwd ?? process.cwd());
-  const modes = getSafetyNetEnvModes();
+  const modes = getCCSafetyNetEnvModes();
   return {
     cwd,
     effectiveCwd: cwd,
