@@ -10,14 +10,9 @@ First off, thanks for taking the time to contribute! This document provides guid
   - [Prerequisites](#prerequisites)
   - [Development Setup](#development-setup)
   - [Testing Your Changes Locally](#testing-your-changes-locally)
-- [Project Structure](#project-structure)
 - [Development Workflow](#development-workflow)
   - [Build Commands](#build-commands)
-  - [Code Style & Conventions](#code-style--conventions)
-- [Making Changes](#making-changes)
-  - [Adding a Git Rule](#adding-a-git-rule)
-  - [Adding an rm Rule](#adding-an-rm-rule)
-  - [Adding Other Command Rules](#adding-other-command-rules)
+  - [Conventions](#conventions)
 - [Pull Request Process](#pull-request-process)
 - [Publishing](#publishing)
 - [Getting Help](#getting-help)
@@ -155,100 +150,6 @@ bun run check
 > [!NOTE]
 > See the [official documentation](https://opencode.ai/docs/plugins/) for more details on OpenCode plugins.
 
-## Project Structure
-
-```
-claude-code-safety-net/
-├── .claude-plugin/
-│   ├── plugin.json           # Plugin metadata
-│   └── marketplace.json      # Marketplace config
-├── .github/
-│   ├── workflows/            # CI/CD workflows
-│   │   ├── ci.yml
-│   │   ├── lint-github-actions-workflows.yml
-│   │   └── publish.yml
-│   └── pull_request_template.md
-├── .husky/
-│   └── pre-commit            # Pre-commit hook (knip + lint-staged)
-├── assets/
-│   └── cc-safety-net.schema.json  # JSON schema for config validation
-├── ast-grep/
-│   ├── rules/                # AST-grep rule definitions
-│   ├── rule-tests/           # Rule test cases
-│   └── utils/                # Shared utilities
-├── skills/
-│   ├── set-custom-rules/     # Skill: configure custom rules
-│   └── verify-custom-rules/  # Skill: validate config
-├── hooks/
-│   └── hooks.json            # Hook definitions
-├── scripts/
-│   ├── build-schema.ts       # Generate JSON schema
-│   ├── generate-changelog.ts # Changelog generation
-│   └── publish.ts            # Release automation
-├── src/
-│   ├── index.ts              # OpenCode plugin export
-│   ├── types.ts              # Shared type definitions
-│   ├── bin/
-│   │   └── cc-safety-net.ts  # Claude Code CLI entry point
-│   └── core/
-│       ├── analyze/          # Analysis submodules
-│       │   ├── index.ts           # Main analysis orchestration
-│       │   ├── analyze-command.ts  # Command analysis entry
-│       │   ├── constants.ts        # Shared constants
-│       │   ├── dangerous-text.ts   # Text pattern detection
-│       │   ├── find.ts             # find command analysis
-│       │   ├── interpreters.ts     # Interpreter one-liner detection
-│       │   ├── parallel.ts         # parallel command analysis
-│       │   ├── rm.ts               # rm command analysis
-│       │   ├── rm-flags.ts         # rm flag parsing
-│       │   ├── segment.ts          # Command segment analysis
-│       │   ├── shell-wrappers.ts   # Shell wrapper detection
-│       │   ├── tmpdir.ts           # Temp directory detection
-│       │   └── xargs.ts            # xargs command analysis
-│       ├── audit.ts          # Audit logging
-│       ├── config.ts         # Config loading
-│       ├── env.ts            # Environment variable utilities
-│       ├── format.ts         # Output formatting
-│       ├── git/              # Git parsing, config, worktree, and safety rules
-│       ├── rules/            # Custom rulebooks, policy, and matching
-│       └── shell.ts          # Shell parsing utilities
-├── tests/
-│   ├── helpers.ts            # Test utilities
-│   ├── analyze-coverage.test.ts
-│   ├── audit.test.ts
-│   ├── config.test.ts
-│   ├── custom-rules.test.ts
-│   ├── custom-rules-integration.test.ts
-│   ├── edge-cases.test.ts
-│   ├── find.test.ts
-│   ├── parsing-helpers.test.ts
-│   ├── rules-git.test.ts
-│   └── rules-rm.test.ts
-├── .lintstagedrc.json        # Lint-staged config (biome + ast-grep)
-├── biome.json                # Linter/formatter config
-├── knip.ts                   # Dead code detection config
-├── package.json              # Project config
-├── sgconfig.yml              # AST-grep config
-├── tsconfig.json             # TypeScript config
-├── tsconfig.typecheck.json   # Type-check only config
-├── AGENTS.md                 # AI agent guidelines
-├── CLAUDE.md                 # Claude Code context
-└── README.md                 # Project documentation
-```
-
-| Module | Purpose |
-|--------|---------|
-| `analyze/index.ts` | Main entry, command analysis orchestration |
-| `analyze/` | Submodules for specific analysis tasks (find, xargs, parallel, interpreters, etc.) |
-| `audit.ts` | Audit logging to `~/.cc-safety-net/logs/` |
-| `config.ts` | Runtime config loading from rulebook-backed rule config |
-| `env.ts` | Environment variable utilities (`envTruthy`) |
-| `format.ts` | Output formatting (`formatBlockedMessage`) |
-| `git/` | Git rules, parsing, config, environment, and worktree handling |
-| `analyze/rm.ts` | rm analysis (cwd-relative, temp paths, root/home detection) |
-| `rules/custom.ts` | Custom rule matching |
-| `shell.ts` | Shell parsing (`splitShellCommands`, `shlexSplit`, `stripWrappers`) |
-
 ## Development Workflow
 
 ### Build Commands
@@ -274,7 +175,7 @@ bun test --test-name-pattern "checkout"
 bun run build
 ```
 
-### Code Style & Conventions
+### Conventions
 
 | Convention | Rule |
 |------------|------|
@@ -287,93 +188,6 @@ bun run build
 | Function Naming | `camelCase` for functions, `PascalCase` for types/interfaces |
 | Constants | `SCREAMING_SNAKE_CASE` for reason constants |
 | Imports | Relative imports within package |
-
-**Examples**:
-
-```typescript
-// Good
-export function analyzeCommand(
-  command: string,
-  options?: { strict?: boolean }
-): string | null {
-  // ...
-}
-
-// Bad
-export function analyzeCommand(command, options) {  // Missing type hints
-  // ...
-}
-```
-
-**Anti-Patterns (Do Not Do)**:
-- Using npm/yarn/pnpm instead of bun
-- Suppressing type errors with `@ts-ignore` or `any`
-- Skipping tests for new rules
-- Modifying version in `package.json` directly
-
-## Making Changes
-
-### Adding a Git Rule
-
-1. **Add reason constant** in `src/core/git/rules.ts`:
-   ```typescript
-   const REASON_MY_RULE = "git my-command does something dangerous. Use safer alternative.";
-   ```
-
-2. **Add detection logic** in `analyzeGitRule()`:
-   ```typescript
-   if (subcommand === "my-command" && tokens.includes("--dangerous-flag")) {
-     return REASON_MY_RULE;
-   }
-   ```
-
-3. **Add tests** in `tests/rules-git.test.ts`:
-   ```typescript
-   describe("git my-command", () => {
-     test("dangerous flag blocked", () => {
-       assertBlocked("git my-command --dangerous-flag", "dangerous");
-     });
-
-     test("safe flag allowed", () => {
-       assertAllowed("git my-command --safe-flag");
-     });
-   });
-   ```
-
-4. **Run checks**:
-   ```bash
-   bun run check
-   ```
-
-### Adding an rm Rule
-
-1. **Add logic** in `src/core/analyze/rm.ts`
-2. **Add tests** in `tests/core/rules-rm.test.ts`
-3. **Run checks**: `bun run check`
-
-### Adding Other Command Rules
-
-1. **Add reason constant** in the relevant analyzer file under `src/core/analyze/`:
-   ```typescript
-   const REASON_MY_COMMAND = "my-command is dangerous because...";
-   ```
-
-2. **Add detection** in `analyzeSegment()`
-
-3. **Add tests** in the appropriate test file
-
-4. **Run checks**: `bun run check`
-
-### Edge Cases to Test
-
-When adding rules, ensure you test these edge cases:
-
-- Shell wrappers: `bash -c '...'`, `sh -lc '...'`
-- Sudo/env prefixes: `sudo git ...`, `env VAR=1 git ...`
-- Pipelines: `echo ok | git reset --hard`
-- Interpreter one-liners: `python -c 'os.system("...")'`
-- Xargs/parallel: `find . | xargs rm -rf`
-- Busybox: `busybox rm -rf /`
 
 ## Pull Request Process
 
@@ -395,7 +209,7 @@ When adding rules, ensure you test these edge cases:
 - [ ] Code follows project conventions (type hints, naming, etc.)
 - [ ] `bun run check` passes (lint, types, dead code, tests)
 - [ ] Tests added for new rules (minimum 90% coverage required)
-- [ ] Tested locally with Claude Code, OpenCode, Gemini CLI or GitHub Copilot CLI
+- [ ] Tested locally with Codex, Claude Code, Gemini CLI, GitHub Copilot CLI, Kimi CLI or Pi
 - [ ] Updated documentation if needed (README, AGENTS.md)
 - [ ] No version changes in `package.json`
 
