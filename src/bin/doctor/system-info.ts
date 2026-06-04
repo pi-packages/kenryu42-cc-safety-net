@@ -52,8 +52,8 @@ function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv): string 
   const candidates = extname(command)
     ? [command]
     : [
-        command,
         ...getWindowsExecutableExtensions(env).map((extension) => `${command}${extension}`),
+        command,
       ];
   if (command.includes('/') || command.includes('\\')) {
     return candidates.find((candidate) => existsSync(candidate)) ?? command;

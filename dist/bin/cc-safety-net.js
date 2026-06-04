@@ -7850,8 +7850,8 @@ function getWindowsExecutableExtensions(env) {
 }
 function resolveWindowsCommand(command2, env) {
   const candidates = extname(command2) ? [command2] : [
-    command2,
-    ...getWindowsExecutableExtensions(env).map((extension) => `${command2}${extension}`)
+    ...getWindowsExecutableExtensions(env).map((extension) => `${command2}${extension}`),
+    command2
   ];
   if (command2.includes("/") || command2.includes("\\")) {
     return candidates.find((candidate) => existsSync14(candidate)) ?? command2;

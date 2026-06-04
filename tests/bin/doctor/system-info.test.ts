@@ -552,10 +552,13 @@ describe('defaultVersionFetcher', () => {
     if (process.platform === 'win32') return;
 
     await withTempDir('doctor-windows-cmd-', async (tmpDir) => {
+      const extensionlessPath = join(tmpDir, 'fake');
       const commandPath = join(tmpDir, 'fake.CMD');
       const comspecPath = join(tmpDir, 'cmd');
+      writeFileSync(extensionlessPath, '#!/bin/sh\nprintf "extensionless"\n');
       writeFileSync(commandPath, '');
       writeFileSync(comspecPath, '#!/bin/sh\nprintf "%s" "$3"\n');
+      chmodSync(extensionlessPath, 0o755);
       chmodSync(comspecPath, 0o755);
 
       const result = await withEnv(
