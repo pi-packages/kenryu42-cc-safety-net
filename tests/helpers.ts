@@ -204,6 +204,7 @@ export const mockVersionFetcher: VersionFetcher = async (args: string[]) => {
   const mockVersions: Record<string, string> = {
     claude: '1.0.0',
     opencode: '0.1.0',
+    codex: 'codex 1.2.0',
     gemini: '0.20.0',
     kimi: 'kimi 0.3.0',
     pi: 'pi 0.4.0',

@@ -165,7 +165,7 @@ describe('detectAllHooks', () => {
     }
   });
 
-  test('orders doctor hooks with Kimi between Copilot CLI and Codex', () => {
+  test('orders doctor hooks with coding CLIs alphabetical after Claude Code', () => {
     const tmpBase = join(tmpdir(), `doctor-hooks-${Date.now()}`);
     const homeDir = join(tmpBase, 'home');
     const projectDir = join(tmpBase, 'project');
@@ -175,12 +175,12 @@ describe('detectAllHooks', () => {
     try {
       expect(detectAllHooks(projectDir, { homeDir }).map((hook) => hook.platform)).toEqual([
         'claude-code',
-        'opencode',
-        'gemini-cli',
-        'copilot-cli',
-        'kimi-cli',
-        'pi',
         'codex',
+        'copilot-cli',
+        'gemini-cli',
+        'kimi-cli',
+        'opencode',
+        'pi',
       ]);
     } finally {
       rmSync(tmpBase, { recursive: true, force: true });

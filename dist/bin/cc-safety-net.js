@@ -6396,20 +6396,9 @@ var integrationMetadata = [
     }
   },
   {
-    id: "opencode",
-    displayName: "OpenCode",
+    id: "codex",
+    displayName: "Codex",
     doctorVisible: true
-  },
-  {
-    id: "gemini-cli",
-    displayName: "Gemini CLI",
-    doctorVisible: true,
-    runtimeHook: {
-      flags: ["-gc", "--gemini-cli"],
-      description: "Run as Gemini CLI BeforeTool hook",
-      legacyTopLevel: true,
-      order: 3
-    }
   },
   {
     id: "copilot-cli",
@@ -6420,6 +6409,17 @@ var integrationMetadata = [
       description: "Run as Copilot CLI PreToolUse hook",
       legacyTopLevel: true,
       order: 2
+    }
+  },
+  {
+    id: "gemini-cli",
+    displayName: "Gemini CLI",
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ["-gc", "--gemini-cli"],
+      description: "Run as Gemini CLI BeforeTool hook",
+      legacyTopLevel: true,
+      order: 3
     }
   },
   {
@@ -6434,13 +6434,13 @@ var integrationMetadata = [
     }
   },
   {
-    id: "pi",
-    displayName: "Pi",
+    id: "opencode",
+    displayName: "OpenCode",
     doctorVisible: true
   },
   {
-    id: "codex",
-    displayName: "Codex",
+    id: "pi",
+    displayName: "Pi",
     doctorVisible: true
   }
 ];
@@ -7141,10 +7141,11 @@ function formatSystemInfoTable(system) {
   const rowData = [
     { label: "cc-safety-net", value: system.version },
     { label: "Claude Code", value: system.claudeCodeVersion },
-    { label: "OpenCode", value: system.openCodeVersion },
-    { label: "Gemini CLI", value: system.geminiCliVersion },
+    { label: "Codex", value: system.codexCliVersion },
     { label: "Copilot CLI", value: system.copilotCliVersion },
+    { label: "Gemini CLI", value: system.geminiCliVersion },
     { label: "Kimi CLI", value: system.kimiCliVersion },
+    { label: "OpenCode", value: system.openCodeVersion },
     { label: "Pi", value: system.piCliVersion },
     { label: "Node.js", value: system.nodeVersion },
     { label: "npm", value: system.npmVersion },
@@ -8093,6 +8094,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher, options2 = {}) {
     claudeRaw,
     claudePluginListOutput,
     openCodeRaw,
+    codexRaw,
     geminiRaw,
     geminiExtensionsListOutput,
     copilotRaw,
@@ -8107,6 +8109,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher, options2 = {}) {
     fetcher(["claude", "--version"]),
     fetcher(["claude", "plugin", "list"]),
     fetcher(["opencode", "--version"]),
+    fetcher(["codex", "--version"]),
     fetcher(["gemini", "--version"]),
     fetcher(["gemini", "extensions", "list"]),
     fetchCopilotVersion(),
@@ -8123,6 +8126,7 @@ async function getSystemInfo(fetcher = defaultVersionFetcher, options2 = {}) {
     claudeCodeVersion: parseVersion(claudeRaw),
     claudePluginListOutput,
     openCodeVersion: parseVersion(openCodeRaw),
+    codexCliVersion: parseVersion(codexRaw),
     geminiCliVersion: parseVersion(geminiRaw),
     geminiExtensionsListOutput,
     copilotCliVersion: parseVersion(copilotRaw),

@@ -33,6 +33,7 @@ function createDoctorReport(overrides: Partial<DoctorReport> = {}): DoctorReport
       claudeCodeVersion: null,
       claudePluginListOutput: null,
       openCodeVersion: null,
+      codexCliVersion: null,
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,
@@ -422,8 +423,20 @@ describe('formatSystemInfoSection', () => {
     expect(output).toContain('Platform');
     expect(output).toContain('Bun');
     expect(output).toContain('Copilot CLI');
+    expect(output).toContain('Codex');
     expect(output).toContain('Kimi CLI');
     expect(output).toContain('Pi');
+    expect(output.indexOf('cc-safety-net')).toBeLessThan(output.indexOf('Claude Code'));
+    expect(output.indexOf('Claude Code')).toBeLessThan(output.indexOf('Codex'));
+    expect(output.indexOf('Codex')).toBeLessThan(output.indexOf('Copilot CLI'));
+    expect(output.indexOf('Copilot CLI')).toBeLessThan(output.indexOf('Gemini CLI'));
+    expect(output.indexOf('Gemini CLI')).toBeLessThan(output.indexOf('Kimi CLI'));
+    expect(output.indexOf('Kimi CLI')).toBeLessThan(output.indexOf('OpenCode'));
+    expect(output.indexOf('OpenCode')).toBeLessThan(output.indexOf('Pi'));
+    expect(output.indexOf('Pi')).toBeLessThan(output.indexOf('Node.js'));
+    expect(output.indexOf('Node.js')).toBeLessThan(output.indexOf('npm'));
+    expect(output.indexOf('npm')).toBeLessThan(output.indexOf('Bun'));
+    expect(output.indexOf('Bun')).toBeLessThan(output.indexOf('Platform'));
     // Should have table borders
     expect(output).toContain('┌');
     expect(output).toContain('┘');
@@ -435,6 +448,7 @@ describe('formatSystemInfoSection', () => {
       claudeCodeVersion: null,
       claudePluginListOutput: null,
       openCodeVersion: null,
+      codexCliVersion: null,
       geminiCliVersion: null,
       geminiExtensionsListOutput: null,
       copilotCliVersion: null,

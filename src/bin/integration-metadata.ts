@@ -23,20 +23,9 @@ const integrationMetadata = [
     },
   },
   {
-    id: 'opencode',
-    displayName: 'OpenCode',
+    id: 'codex',
+    displayName: 'Codex',
     doctorVisible: true,
-  },
-  {
-    id: 'gemini-cli',
-    displayName: 'Gemini CLI',
-    doctorVisible: true,
-    runtimeHook: {
-      flags: ['-gc', '--gemini-cli'],
-      description: 'Run as Gemini CLI BeforeTool hook',
-      legacyTopLevel: true,
-      order: 3,
-    },
   },
   {
     id: 'copilot-cli',
@@ -47,6 +36,17 @@ const integrationMetadata = [
       description: 'Run as Copilot CLI PreToolUse hook',
       legacyTopLevel: true,
       order: 2,
+    },
+  },
+  {
+    id: 'gemini-cli',
+    displayName: 'Gemini CLI',
+    doctorVisible: true,
+    runtimeHook: {
+      flags: ['-gc', '--gemini-cli'],
+      description: 'Run as Gemini CLI BeforeTool hook',
+      legacyTopLevel: true,
+      order: 3,
     },
   },
   {
@@ -61,13 +61,13 @@ const integrationMetadata = [
     },
   },
   {
-    id: 'pi',
-    displayName: 'Pi',
+    id: 'opencode',
+    displayName: 'OpenCode',
     doctorVisible: true,
   },
   {
-    id: 'codex',
-    displayName: 'Codex',
+    id: 'pi',
+    displayName: 'Pi',
     doctorVisible: true,
   },
 ] as const satisfies readonly IntegrationMetadata[];

@@ -9,24 +9,24 @@ describe('integration metadata', () => {
   test('includes display names for every doctor platform', () => {
     expect(doctorIntegrationOrder.map((id) => getIntegrationDisplayName(id))).toEqual([
       'Claude Code',
-      'OpenCode',
-      'Gemini CLI',
-      'Copilot CLI',
-      'Kimi CLI',
-      'Pi',
       'Codex',
+      'Copilot CLI',
+      'Gemini CLI',
+      'Kimi CLI',
+      'OpenCode',
+      'Pi',
     ]);
   });
 
-  test('keeps doctor order centralized with Pi before Codex', () => {
+  test('keeps doctor coding CLI order alphabetical after Claude Code', () => {
     expect(doctorIntegrationOrder).toEqual([
       'claude-code',
-      'opencode',
-      'gemini-cli',
-      'copilot-cli',
-      'kimi-cli',
-      'pi',
       'codex',
+      'copilot-cli',
+      'gemini-cli',
+      'kimi-cli',
+      'opencode',
+      'pi',
     ]);
   });
 

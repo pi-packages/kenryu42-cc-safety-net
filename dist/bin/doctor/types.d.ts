@@ -114,6 +114,8 @@ export interface SystemInfo {
     claudePluginListOutput: string | null;
     /** OpenCode version (from `opencode --version`) */
     openCodeVersion: string | null;
+    /** Codex CLI version (from `codex --version`) */
+    codexCliVersion: string | null;
     /** Gemini CLI version (from `gemini --version`) */
     geminiCliVersion: string | null;
     /** Gemini CLI extension list output (from `gemini extensions list`) */

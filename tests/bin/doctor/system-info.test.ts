@@ -144,6 +144,9 @@ describe('getSystemInfo', () => {
     expect(sysInfo.openCodeVersion === null || typeof sysInfo.openCodeVersion === 'string').toBe(
       true,
     );
+    expect(sysInfo.codexCliVersion === null || typeof sysInfo.codexCliVersion === 'string').toBe(
+      true,
+    );
     expect(sysInfo.geminiCliVersion === null || typeof sysInfo.geminiCliVersion === 'string').toBe(
       true,
     );
@@ -191,6 +194,11 @@ describe('getSystemInfo', () => {
   test('includes Pi CLI version with mock fetcher', async () => {
     const sysInfo = await getSystemInfo(mockVersionFetcher);
     expect(sysInfo.piCliVersion).toBe('0.4.0');
+  });
+
+  test('includes Codex CLI version with mock fetcher', async () => {
+    const sysInfo = await getSystemInfo(mockVersionFetcher);
+    expect(sysInfo.codexCliVersion).toBe('1.2.0');
   });
 
   test('includes successful Pi safety-net probe result', async () => {
@@ -323,6 +331,15 @@ describe('getSystemInfo', () => {
     expect(sysInfo.kimiCliVersion).toBe('1.2.3');
   });
 
+  test('parses Codex CLI version output through existing parser', async () => {
+    const sysInfo = await getSystemInfo(async (args) => {
+      if (args[0] === 'codex') return 'Codex CLI v1.2.3';
+      return null;
+    });
+
+    expect(sysInfo.codexCliVersion).toBe('1.2.3');
+  });
+
   test('includes Claude plugin list output with mock fetcher', async () => {
     const sysInfo = await getSystemInfo(mockVersionFetcher);
     expect(sysInfo.claudePluginListOutput).toContain('safety-net@cc-marketplace');
@@ -381,6 +398,7 @@ describe('getSystemInfo', () => {
     expect(result.claudeCodeVersion).toBeNull();
     expect(result.claudePluginListOutput).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
+    expect(result.codexCliVersion).toBeNull();
     expect(result.kimiCliVersion).toBeNull();
     expect(result.piCliVersion).toBeNull();
     expect(result.geminiExtensionsListOutput).toBeNull();
@@ -395,6 +413,7 @@ describe('getSystemInfo', () => {
     const result = await getSystemInfo(emptyFetcher);
     expect(result.claudeCodeVersion).toBeNull();
     expect(result.copilotCliVersion).toBeNull();
+    expect(result.codexCliVersion).toBeNull();
     expect(result.bunVersion).toBeNull();
   });
 });
