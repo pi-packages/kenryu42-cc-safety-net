@@ -1,4 +1,4 @@
-import { CC_SAFETY_NET_TEMPLATE } from '@/opencode/builtin-commands/templates/cc-safety-net';
+import { CC_SAFETY_NET_TEMPLATE } from '@/builtin-commands/templates/cc-safety-net';
 import type {
   BuiltinCommandName,
   BuiltinCommands,

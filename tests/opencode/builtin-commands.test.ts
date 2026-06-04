@@ -1,15 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CC_SAFETY_NET_TEMPLATE } from '@/builtin-commands/templates/cc-safety-net';
 import { loadBuiltinCommands } from '@/opencode/builtin-commands/commands';
 
 describe('builtin OpenCode commands', () => {
-  test('uses the cc-safety-net skill workflow as the command template', () => {
+  test('uses the shared cc-safety-net workflow as the command template', () => {
+    expect(loadBuiltinCommands()['cc-safety-net']?.template).toBe(
+      CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf('## Workflow')),
+    );
+  });
+
+  test('keeps the shared cc-safety-net workflow in sync with the skill', () => {
     const skill = readFileSync(join(process.cwd(), 'skills/cc-safety-net/SKILL.md'), 'utf-8');
 
-    expect(loadBuiltinCommands()['cc-safety-net']?.template).toBe(
-      skill.slice(skill.indexOf('## Workflow')),
-    );
+    expect(CC_SAFETY_NET_TEMPLATE.trimStart()).toBe(skill.slice(skill.indexOf('## Workflow')));
   });
 
   test('keeps the cc-safety-net skill manual and doc-driven', () => {

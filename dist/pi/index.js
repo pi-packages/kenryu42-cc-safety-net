@@ -214,6 +214,67 @@ var require_parse = __commonJS((exports, module) => {
   };
 });
 
+// src/builtin-commands/templates/cc-safety-net.ts
+var CC_SAFETY_NET_TEMPLATE = `
+## Workflow
+
+Help the user configure custom blocking rules for CC Safety Net.
+
+Use information already provided in the user's prompt. Ask only when the scope, action, rule intent, merge behavior, or target command is unclear.
+
+1. Run \`npx -y cc-safety-net rule doc\` and treat that output as the complete source of truth for schema, paths, GitHub sources, matching behavior, and validation.
+2. Determine the requested scope from the prompt when possible:
+   - User: applies to all projects.
+   - Project: applies only to the current project.
+   - GitHub: edits or creates a shareable rulebook structure in the current repository.
+3. Determine whether to add a rule, edit a rule, disable a rule, override a reason, migrate legacy rules, or explain custom rules from the prompt when possible.
+4. Inspect existing configs before modifying installed local rules:
+   - Run \`npx -y cc-safety-net rule verify\`
+   - Run \`npx -y cc-safety-net rule list\`
+5. Inspect relevant project files only when the user asks for rule suggestions or the requested rule depends on project context. Look at manifests, scripts, task runners, CI, infrastructure, database, migration, and deployment files that explain risky commands.
+6. Convert the request into valid Safety Net JSON using \`rule doc\`.
+   - For User or Project scope, add or edit the selected local \`rule.json\` and \`<rulebook-name>/rulebook.json\`.
+   - For GitHub scope, add or edit \`.cc-safety-net/rules/<rulebook-name>/rulebook.json\` in the current repository.
+   - Do not offer to add a GitHub source with \`owner/repo\`; installing rules from a GitHub source is outside this workflow.
+7. Preserve unrelated existing rulebook sources, overrides, and rulebooks. Preview proposed JSON before writing when creating a new rulebook, merging with existing config, or resolving ambiguity.
+8. For GitHub rules, ensure the repository layout is \`.cc-safety-net/rules/<rulebook-name>/rulebook.json\`, and ensure the source name, directory name, and rulebook \`name\` match exactly.
+9. Validate after edits:
+   - Project rules: run \`npx -y cc-safety-net rule sync\`, \`npx -y cc-safety-net rule verify\`, \`npx -y cc-safety-net rule test\`, and \`npx -y cc-safety-net rule list\`.
+   - User rules: run \`npx -y cc-safety-net rule sync --global\`, \`npx -y cc-safety-net rule verify\`, \`npx -y cc-safety-net rule test --global\`, and \`npx -y cc-safety-net rule list\`.
+   - Shareable GitHub rulebook-only edits: run \`npx -y cc-safety-net rule verify\` and \`npx -y cc-safety-net rule test <rulebook-name>\`. Run \`sync\` and \`list\` only if the rulebook is also installed in local \`rule.json\`.
+10. If validation or tests fail, show the exact errors and make the smallest fix.
+11. Confirm the saved paths or GitHub rulebook path and summarize the added or updated rules.
+
+## Rules
+
+- Custom rules can only add restrictions; they cannot bypass built-in SafetyNet protections.
+- Config files list rulebook sources. Rule definitions live in \`rulebook.json\`, not directly in \`rule.json\`.
+- Do not use legacy inline \`.safety-net.json\` or \`~/.cc-safety-net/config.json\` rules. Convert existing legacy files with \`npx -y cc-safety-net rule migrate\`.
+- Every rule command must be listed in \`allowed_commands\`, and every rule must have at least one blocked fixture.
+- Blocked fixtures must specify the expected \`rule\`; include allowed fixtures for close-but-safe commands.
+- Local source names are bare names such as \`project-rules\`; do not put filesystem paths in \`rules\`.
+- Invalid config, corrupt cache, invalid local rulebooks, or remote rulebook repair failures fail closed until repaired with \`npx -y cc-safety-net rule sync\`.
+`;
+
+// src/pi/builtin-commands/commands.ts
+var COMMAND_NAME = "cc-safety-net";
+var COMMAND_DESCRIPTION = "Manage Safety Net rulebooks";
+var DEFAULT_USER_REQUEST = "Help me configure CC Safety Net.";
+function registerBuiltinCommands(pi) {
+  pi.registerCommand(COMMAND_NAME, {
+    description: COMMAND_DESCRIPTION,
+    handler: async (args, ctx) => {
+      pi.sendUserMessage(buildSafetyNetCommandPrompt(args), ctx.isIdle() ? undefined : { deliverAs: "followUp" });
+    }
+  });
+}
+function buildSafetyNetCommandPrompt(args) {
+  return `${CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf("## Workflow")).trimEnd()}
+
+## User request
+
+${args.trim() || DEFAULT_USER_REQUEST}`;
+}
 // src/core/analyze/dangerous-text.ts
 function dangerousInText(text) {
   const t = text.toLowerCase();
@@ -289,12 +350,12 @@ function analyzeAwkSystemCalls(tokens, analyzeNested) {
   for (const token of tokens.slice(1)) {
     if (!token.includes("system"))
       continue;
-    const commands = extractAwkSystemCommands(token);
-    if (!commands)
+    const commands2 = extractAwkSystemCommands(token);
+    if (!commands2)
       continue;
-    if (commands.dynamic)
+    if (commands2.dynamic)
       return REASON_AWK_SYSTEM_DYNAMIC;
-    for (const command of commands.commands) {
+    for (const command of commands2.commands) {
       const reason = analyzeNested(command);
       if (reason)
         return reason;
@@ -303,7 +364,7 @@ function analyzeAwkSystemCalls(tokens, analyzeNested) {
   return null;
 }
 function extractAwkSystemCommands(code) {
-  const commands = [];
+  const commands2 = [];
   let sawSystem = false;
   let searchIndex = 0;
   while (searchIndex < code.length) {
@@ -331,14 +392,14 @@ function extractAwkSystemCommands(code) {
     i = skipAwkWhitespace(code, parsed.endIndex);
     sawSystem = true;
     if (code[i] !== ")") {
-      return { dynamic: true, commands };
+      return { dynamic: true, commands: commands2 };
     }
-    commands.push(parsed.value);
+    commands2.push(parsed.value);
     searchIndex = i + 1;
   }
   if (!sawSystem)
     return null;
-  return commands.length > 0 ? { dynamic: false, commands } : { dynamic: true, commands };
+  return commands2.length > 0 ? { dynamic: false, commands: commands2 } : { dynamic: true, commands: commands2 };
 }
 function isAwkIdentifierChar(char) {
   return !!char && /[A-Za-z0-9_]/.test(char);
@@ -3464,8 +3525,8 @@ function analyzeParallelDynamicEnvValues(values, args, context) {
     if (!hasParallelPlaceholder(value)) {
       continue;
     }
-    const commands = args.length > 0 ? args.map((arg) => replaceParallelPlaceholder(value, arg)) : [value];
-    for (const command2 of commands) {
+    const commands2 = args.length > 0 ? args.map((arg) => replaceParallelPlaceholder(value, arg)) : [value];
+    for (const command2 of commands2) {
       const reason = context.analyzeNested(command2, {
         envAssignments: context.envAssignments,
         effectiveCwd: context.cwd
@@ -5021,10 +5082,10 @@ function validateRulebook(rulebook) {
   }
   return { errors, ruleNames };
 }
-function validateAllowedCommands(commands, errors) {
+function validateAllowedCommands(commands2, errors) {
   const seen = new Set;
-  for (let i = 0;i < commands.length; i++) {
-    const command2 = commands[i];
+  for (let i = 0;i < commands2.length; i++) {
+    const command2 = commands2[i];
     if (typeof command2 !== "string" || !COMMAND_PATTERN.test(command2)) {
       errors.push(`allowed_commands[${i}]: must match command pattern`);
       continue;
@@ -6074,6 +6135,66 @@ function analyzeCommand(command2, options2 = {}) {
   return analyzeCommandInternal(command2, 0, { ...options2, config });
 }
 
+// src/core/audit.ts
+import { appendFileSync, existsSync as existsSync10, mkdirSync as mkdirSync3 } from "node:fs";
+import { homedir as homedir3 } from "node:os";
+import { join as join8 } from "node:path";
+function sanitizeSessionIdForFilename(sessionId) {
+  const raw = sessionId.trim();
+  if (!raw) {
+    return null;
+  }
+  let safe = raw.replace(/[^A-Za-z0-9_.-]+/g, "_");
+  safe = safe.replace(/^[._-]+|[._-]+$/g, "").slice(0, 128);
+  if (!safe || safe === "." || safe === "..") {
+    return null;
+  }
+  return safe;
+}
+function writeAuditLog(sessionId, command2, segment, reason, cwd, options2 = {}) {
+  const safeSessionId = sanitizeSessionIdForFilename(sessionId);
+  if (!safeSessionId) {
+    return;
+  }
+  const home = options2.homeDir ?? homedir3();
+  const logsDir = join8(home, ".cc-safety-net", "logs");
+  try {
+    if (!existsSync10(logsDir)) {
+      mkdirSync3(logsDir, { recursive: true });
+    }
+    const logFile = join8(logsDir, `${safeSessionId}.jsonl`);
+    const entry = {
+      ts: new Date().toISOString(),
+      decision: options2.decision ?? "deny",
+      command: redactSecrets(command2).slice(0, 300),
+      segment: redactSecrets(segment).slice(0, 300),
+      reason,
+      cwd
+    };
+    appendFileSync(logFile, `${JSON.stringify(entry)}
+`, "utf-8");
+  } catch {}
+}
+function redactSecrets(text) {
+  let result = text;
+  result = result.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "<redacted>");
+  result = result.replace(/\b((?:DATABASE|POSTGRES|POSTGRESQL|MYSQL|MARIADB|REDIS|MONGO(?:DB)?|DB)_URL)=([^\s]+)/gi, "$1=<redacted>");
+  result = result.replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIALS)[A-Z0-9_]*)=([^\s]+)/gi, "$1=<redacted>");
+  result = result.replace(/(['"]?\s*(?:authorization|cookie|x-api-key|api-key)\s*:\s*)([^'"\r\n]+)(['"]?)/gi, "$1<redacted>$3");
+  result = result.replace(/(['"]?\s*authorization\s*:\s*)([^'"]+)(['"]?)/gi, "$1<redacted>$3");
+  result = result.replace(/(authorization\s*:\s*)([^\s"']+)(\s+[^\s"']+)?/gi, "$1<redacted>");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@/]+)@/gi, "$1<redacted>:<redacted>@");
+  result = result.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@:]+)@/gi, "$1<redacted>@");
+  result = result.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bxoxb-[A-Za-z0-9-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bnpm_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[rs]k_(?:live|test)_[A-Za-z0-9_]{20,}\b/g, "<redacted>");
+  result = result.replace(/\bpypi-[A-Za-z0-9_-]{20,}\b/g, "<redacted>");
+  result = result.replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}\b/g, "<redacted>");
+  result = result.replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, "<redacted>");
+  return result;
+}
+
 // src/core/format.ts
 function formatBlockedMessage(input) {
   const { reason, command: command2, segment } = input;
@@ -6105,108 +6226,164 @@ function excerpt(text, maxLen) {
   return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
 }
 
-// src/builtin-commands/templates/cc-safety-net.ts
-var CC_SAFETY_NET_TEMPLATE = `
-## Workflow
-
-Help the user configure custom blocking rules for CC Safety Net.
-
-Use information already provided in the user's prompt. Ask only when the scope, action, rule intent, merge behavior, or target command is unclear.
-
-1. Run \`npx -y cc-safety-net rule doc\` and treat that output as the complete source of truth for schema, paths, GitHub sources, matching behavior, and validation.
-2. Determine the requested scope from the prompt when possible:
-   - User: applies to all projects.
-   - Project: applies only to the current project.
-   - GitHub: edits or creates a shareable rulebook structure in the current repository.
-3. Determine whether to add a rule, edit a rule, disable a rule, override a reason, migrate legacy rules, or explain custom rules from the prompt when possible.
-4. Inspect existing configs before modifying installed local rules:
-   - Run \`npx -y cc-safety-net rule verify\`
-   - Run \`npx -y cc-safety-net rule list\`
-5. Inspect relevant project files only when the user asks for rule suggestions or the requested rule depends on project context. Look at manifests, scripts, task runners, CI, infrastructure, database, migration, and deployment files that explain risky commands.
-6. Convert the request into valid Safety Net JSON using \`rule doc\`.
-   - For User or Project scope, add or edit the selected local \`rule.json\` and \`<rulebook-name>/rulebook.json\`.
-   - For GitHub scope, add or edit \`.cc-safety-net/rules/<rulebook-name>/rulebook.json\` in the current repository.
-   - Do not offer to add a GitHub source with \`owner/repo\`; installing rules from a GitHub source is outside this workflow.
-7. Preserve unrelated existing rulebook sources, overrides, and rulebooks. Preview proposed JSON before writing when creating a new rulebook, merging with existing config, or resolving ambiguity.
-8. For GitHub rules, ensure the repository layout is \`.cc-safety-net/rules/<rulebook-name>/rulebook.json\`, and ensure the source name, directory name, and rulebook \`name\` match exactly.
-9. Validate after edits:
-   - Project rules: run \`npx -y cc-safety-net rule sync\`, \`npx -y cc-safety-net rule verify\`, \`npx -y cc-safety-net rule test\`, and \`npx -y cc-safety-net rule list\`.
-   - User rules: run \`npx -y cc-safety-net rule sync --global\`, \`npx -y cc-safety-net rule verify\`, \`npx -y cc-safety-net rule test --global\`, and \`npx -y cc-safety-net rule list\`.
-   - Shareable GitHub rulebook-only edits: run \`npx -y cc-safety-net rule verify\` and \`npx -y cc-safety-net rule test <rulebook-name>\`. Run \`sync\` and \`list\` only if the rulebook is also installed in local \`rule.json\`.
-10. If validation or tests fail, show the exact errors and make the smallest fix.
-11. Confirm the saved paths or GitHub rulebook path and summarize the added or updated rules.
-
-## Rules
-
-- Custom rules can only add restrictions; they cannot bypass built-in SafetyNet protections.
-- Config files list rulebook sources. Rule definitions live in \`rulebook.json\`, not directly in \`rule.json\`.
-- Do not use legacy inline \`.safety-net.json\` or \`~/.cc-safety-net/config.json\` rules. Convert existing legacy files with \`npx -y cc-safety-net rule migrate\`.
-- Every rule command must be listed in \`allowed_commands\`, and every rule must have at least one blocked fixture.
-- Blocked fixtures must specify the expected \`rule\`; include allowed fixtures for close-but-safe commands.
-- Local source names are bare names such as \`project-rules\`; do not put filesystem paths in \`rules\`.
-- Invalid config, corrupt cache, invalid local rulebooks, or remote rulebook repair failures fail closed until repaired with \`npx -y cc-safety-net rule sync\`.
-`;
-
-// src/opencode/builtin-commands/commands.ts
-var COMMAND_NAME = "cc-safety-net";
-function loadBuiltinCommands(disabledCommands) {
-  const disabled = new Set(disabledCommands ?? []);
-  const commands = {};
-  const definition = {
-    description: "Manage Safety Net rulebooks",
-    template: CC_SAFETY_NET_TEMPLATE.slice(CC_SAFETY_NET_TEMPLATE.indexOf("## Workflow"))
-  };
-  if (!disabled.has(COMMAND_NAME)) {
-    commands[COMMAND_NAME] = definition;
-  }
-  return commands;
-}
-// src/index.ts
+// src/bin/hook/common.ts
 var REASON_SAFETY_NET_FAILED_CLOSED = "Safety Net failed closed because command analysis failed unexpectedly.";
-var CCSafetyNetPlugin = async ({ directory }) => {
-  const modes = getSafetyNetEnvModes();
-  return {
-    config: async (opencodeConfig) => {
-      const builtinCommands = loadBuiltinCommands();
-      const existingCommands = opencodeConfig.command ?? {};
-      opencodeConfig.command = {
-        ...builtinCommands,
-        ...existingCommands
-      };
-    },
-    "tool.execute.before": async (input, output) => {
-      if (input.tool === "bash") {
-        const command2 = output.args.command;
-        let result;
-        try {
-          result = analyzeCommand(command2, {
-            cwd: directory,
-            config: loadConfig(directory, { repairLocalRulebooks: true }),
-            strict: modes.strict,
-            paranoidRm: modes.paranoidRm,
-            paranoidInterpreters: modes.paranoidInterpreters,
-            worktreeMode: modes.worktreeMode
-          });
-        } catch {
-          throw new Error(formatBlockedMessage({
-            reason: REASON_SAFETY_NET_FAILED_CLOSED,
-            command: command2,
-            segment: command2
-          }));
-        }
-        if (result) {
-          const message = formatBlockedMessage({
-            reason: result.reason,
-            command: command2,
-            segment: result.segment,
-            manualPermissionAdvice: result.manualPermissionAdvice
-          });
-          throw new Error(message);
-        }
-      }
+function outputHookDeny(createDenyOutput, reason, command2, segment, manualPermissionAdvice) {
+  console.log(JSON.stringify(createDenyOutput(formatBlockedMessage({
+    reason,
+    command: command2,
+    segment,
+    redact: redactSecrets,
+    manualPermissionAdvice
+  }))));
+}
+async function readHookInput(outputDeny) {
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  const inputText = Buffer.concat(chunks).toString("utf-8").trim();
+  if (!inputText) {
+    outputDeny("Missing hook input JSON.");
+    return null;
+  }
+  return parseHookJson(inputText, outputDeny, "Failed to parse hook input JSON.");
+}
+function parseHookJson(inputText, outputDeny, strictReason) {
+  try {
+    return JSON.parse(inputText);
+  } catch {
+    outputDeny(strictReason);
+    return null;
+  }
+}
+function analyzeHookCommand(command2, cwd) {
+  const paranoidAll = envTruthy(ENV_FLAGS.paranoid);
+  return analyzeCommand(command2, {
+    cwd,
+    config: loadConfig(cwd, { repairLocalRulebooks: true }),
+    strict: envTruthy(ENV_FLAGS.strict),
+    paranoidRm: paranoidAll || envTruthy(ENV_FLAGS.paranoidRm),
+    paranoidInterpreters: paranoidAll || envTruthy(ENV_FLAGS.paranoidInterpreters),
+    worktreeMode: envTruthy(ENV_FLAGS.worktree)
+  });
+}
+function handleBlockedHookCommand(command2, cwd, sessionId, outputDeny) {
+  let result;
+  try {
+    result = analyzeHookCommand(command2, cwd);
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(`Safety Net debug: hook analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
     }
+    outputDeny(REASON_SAFETY_NET_FAILED_CLOSED, command2, command2);
+    return;
+  }
+  if (!result) {
+    if (sessionId && envTruthy(ENV_FLAGS.debug)) {
+      writeAuditLog(sessionId, command2, command2, "allowed", cwd, { decision: "allow" });
+    }
+    return;
+  }
+  if (sessionId) {
+    writeAuditLog(sessionId, command2, result.segment, result.reason, cwd);
+  }
+  outputDeny(result.reason, command2, result.segment);
+}
+async function runHookAdapter(adapter) {
+  const input = await readHookInput(adapter.outputDeny);
+  if (!input) {
+    return;
+  }
+  if (!adapter.isSupported(input)) {
+    return;
+  }
+  const command2 = adapter.getCommand(input, adapter.outputDeny);
+  if (!command2) {
+    return;
+  }
+  handleBlockedHookCommand(command2, adapter.getCwd(input) ?? process.cwd(), adapter.getSessionId(input), adapter.outputDeny);
+}
+async function runConfiguredHookAdapter(adapter) {
+  const outputDeny = (reason, command2, segment, manualPermissionAdvice) => outputHookDeny(adapter.createDenyOutput, reason, command2, segment, manualPermissionAdvice ?? adapter.getManualPermissionAdvice?.(reason));
+  await runHookAdapter({
+    outputDeny,
+    isSupported: adapter.isSupported,
+    getCommand: adapter.getCommand,
+    getCwd: adapter.getCwd,
+    getSessionId: adapter.getSessionId
+  });
+}
+
+// src/pi/tool-use.ts
+function registerToolUseEvent(pi) {
+  pi.on("tool_call", handlePiToolUse);
+}
+function handlePiToolUse(event, ctx) {
+  if (!isPiBashToolUseEvent(event))
+    return;
+  if (typeof event.input.command !== "string") {
+    return blockPiToolUse(REASON_SAFETY_NET_FAILED_CLOSED);
+  }
+  const modes = getSafetyNetEnvModes();
+  let result;
+  try {
+    result = (ctx.safetyNetAnalyzeCommand ?? analyzeCommand)(event.input.command, {
+      cwd: ctx.cwd,
+      config: loadConfig(ctx.cwd, {
+        repairLocalRulebooks: true,
+        ...ctx.safetyNetConfigOptions
+      }),
+      strict: modes.strict,
+      paranoidRm: modes.paranoidRm,
+      paranoidInterpreters: modes.paranoidInterpreters,
+      worktreeMode: modes.worktreeMode
+    });
+  } catch (error) {
+    if (envTruthy(ENV_FLAGS.debug)) {
+      console.error(`Safety Net debug: pi tool_use analysis failed: ${redactSecrets(error instanceof Error ? error.message : String(error))}`);
+    }
+    return blockPiToolUse(REASON_SAFETY_NET_FAILED_CLOSED, event.input.command, event.input.command);
+  }
+  if (!result) {
+    const sessionId2 = ctx.sessionManager.getSessionFile();
+    if (sessionId2 && envTruthy(ENV_FLAGS.debug)) {
+      writeAuditLog(sessionId2, event.input.command, event.input.command, "allowed", ctx.cwd, {
+        decision: "allow"
+      });
+    }
+    return;
+  }
+  const sessionId = ctx.sessionManager.getSessionFile();
+  if (sessionId) {
+    writeAuditLog(sessionId, event.input.command, result.segment, result.reason, ctx.cwd);
+  }
+  return blockPiToolUse(result.reason, event.input.command, result.segment, result.manualPermissionAdvice);
+}
+function isPiBashToolUseEvent(event) {
+  if (!event || typeof event !== "object")
+    return false;
+  const toolUse = event;
+  return toolUse.toolName === "bash" && !!toolUse.input;
+}
+function blockPiToolUse(reason, command2, segment, manualPermissionAdvice) {
+  return {
+    block: true,
+    reason: formatBlockedMessage({
+      reason,
+      command: command2,
+      segment,
+      redact: redactSecrets,
+      manualPermissionAdvice
+    })
   };
-};
+}
+
+// src/pi/index.ts
+function ccSafetyNetPiExtension(pi) {
+  registerToolUseEvent(pi);
+  registerBuiltinCommands(pi);
+}
 export {
-  CCSafetyNetPlugin
+  ccSafetyNetPiExtension as default
 };

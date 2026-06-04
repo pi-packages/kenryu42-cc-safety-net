@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { syncRulesConfig } from '@/core/rules/policy';
 import { CCSafetyNetPlugin } from '@/index';
+import {
+  syncInitialGitRulebook,
+  updatedGitRule,
+  writeUpdatedGitRulebook,
+} from '../helpers/rulebook';
 
 type ToolPlugin = {
   'tool.execute.before': (
@@ -66,32 +70,14 @@ describe('OpenCode plugin', () => {
   test('reloads and repairs local rules before each tool execution', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'safety-net-opencode-plugin-'));
     try {
-      writeRulebook(dir, [
-        {
-          name: 'block-git-add-all',
-          subcommand: 'add',
-          block_args: ['-A'],
-          reason: 'Stage specific files.',
-        },
-      ]);
-      await syncRulesConfig({
-        cwd: dir,
-        userConfigDir: join(dir, 'home', '.cc-safety-net', 'rules'),
-      });
+      await syncInitialGitRulebook(dir);
       const plugin = await loadToolPlugin(dir);
 
-      writeRulebook(dir, [
-        {
-          name: 'block-git-status',
-          subcommand: 'status',
-          block_args: ['status'],
-          reason: 'Use porcelain status elsewhere.',
-        },
-      ]);
+      writeUpdatedGitRulebook(dir);
 
       await expect(
         plugin['tool.execute.before']({ tool: 'bash' }, { args: { command: 'git status' } }),
-      ).rejects.toThrow('Use porcelain status elsewhere.');
+      ).rejects.toThrow(updatedGitRule.reason);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -102,38 +88,4 @@ async function loadToolPlugin(directory: string): Promise<ToolPlugin> {
   return (await CCSafetyNetPlugin({
     directory,
   } as Parameters<typeof CCSafetyNetPlugin>[0])) as unknown as ToolPlugin;
-}
-
-function writeRulebook(
-  dir: string,
-  rules: Array<{ name: string; subcommand: string; block_args: string[]; reason: string }>,
-): void {
-  mkdirSync(join(dir, '.cc-safety-net/rules', 'project-rules'), { recursive: true });
-  writeFileSync(
-    join(dir, '.cc-safety-net/rules', 'rule.json'),
-    JSON.stringify({ version: 1, rules: ['project-rules'], overrides: {} }),
-    'utf-8',
-  );
-  writeFileSync(
-    join(dir, '.cc-safety-net/rules', 'project-rules', 'rulebook.json'),
-    JSON.stringify({
-      rulebook_version: 1,
-      name: 'project-rules',
-      version: '1.0.0',
-      allowed_commands: ['git'],
-      rules: rules.map((rule) => ({
-        name: rule.name,
-        command: 'git',
-        subcommand: rule.subcommand,
-        block_args: rule.block_args,
-        reason: rule.reason,
-      })),
-      tests: rules.map((rule) => ({
-        command: `git ${rule.subcommand} ${rule.block_args[0]}`,
-        expect: 'blocked',
-        rule: rule.name,
-      })),
-    }),
-    'utf-8',
-  );
 }
