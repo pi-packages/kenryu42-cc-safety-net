@@ -121,6 +121,8 @@ async function gitCommitTagPush(newVersion: string): Promise<void> {
     await $`git tag -f v${newVersion}`;
   }
 
+  // Pull with rebase to handle retries where a previous failed run already pushed to main
+  await $`git pull --rebase origin main`;
   await $`git push origin HEAD`;
   // Force push the tag in case we updated an existing one from a failed previous run
   await $`git push origin v${newVersion} --force`;
